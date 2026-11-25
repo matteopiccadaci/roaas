@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ROaaS</title>
+<style>
+  :root { --bg: #fafaf9; --fg: #1c1917; --muted: #57534e; --line: #e7e5e4; --ok: #15803d; --off: #b91c1c; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1c1917; --fg: #f5f5f4; --muted: #a8a29e; --line: #44403c; --ok: #4ade80; --off: #f87171; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px; }
+  h1 { margin: 0 0 4px; } .muted { color: var(--muted); }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin: 16px 0; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+  code, pre { font: 13px/1.4 ui-monospace, monospace; } pre { overflow-x: auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>ROaaS</h1>
+  <p class="muted">Recorded robot work, settled through Crow. <strong>Testnet only</strong>: test tokens with no value.</p>
+  <div class="card" id="status">Loading robot status…</div>
+  <h2>Offers</h2>
+  <div id="offers" class="muted">Loading…</div>
+  <p class="muted">Machine-readable: <a href="/api/offers">/api/offers</a> · <a href="/api/status">/api/status</a> ·
+  check an order before quoting: <code>POST /api/validate {"orderText": "..."}</code></p>
+</main>
+<script>
+  fetch('/api/status').then(r => r.json()).then(s => {
+    const on = s.accepting;
+    document.getElementById('status').innerHTML =
+      `<span class="dot" style="background:var(${on ? '--ok' : '--off'})"></span><strong>${s.robot}</strong>: ` +
+      (on ? 'accepting jobs' : 'not accepting jobs' + (s.reason ? ` (${s.reason})` : '')) +
+      `<br><span class="muted">queue ${s.queue}${s.last_seen_s !== null ? `, lab seen ${s.last_seen_s} s ago` : ''}</span>`;
+  }).catch(() => { document.getElementById('status').textContent = 'Status unavailable.'; });
+  fetch('/api/offers').then(r => r.json()).then(c => {
+    document.getElementById('offers').innerHTML = c.offers.map(o =>
+      `<div class="card"><strong>${o.robot.model}: ${o.task}</strong><br>${o.summary}<br>
+       <span class="muted">price: ${o.price.formula}; delivery within ${Math.round(o.deliver_within_sec / 3600)} h</span>
+       <pre>${JSON.stringify(o.order.example, null, 2)}</pre></div>`).join('');
+  });
+</script>
+</body>
+</html>

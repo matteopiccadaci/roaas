@@ -10,7 +10,8 @@ requires-python = ">=3.9"
 dependencies = ["cryptography>=41"]
 
 [project.optional-dependencies]
-test = ["pytest>=7"]
+agent = ["websockets>=13"]
+test = ["pytest>=7", "websockets>=13"]
 
 [project.scripts]
 roaas = "roaas.cli:main"

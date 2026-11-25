@@ -24,3 +24,5 @@ node_modules/
 .wrangler/
 .DS_Store
 *.egg-info/
+.dev.vars
+.dev.vars.*

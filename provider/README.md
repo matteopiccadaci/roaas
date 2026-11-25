@@ -11,6 +11,7 @@ python -m venv .venv && source .venv/bin/activate       # Windows: .venv\Scripts
 pip install -e ".[test]"
 pytest                                                  # starts the kit's fake controller on free ports
 CROW_REPO=<built Crow clone> pytest                     # also runs Crow's adjudicator code on a delivery
+ROAAS_CLOUD_E2E=1 pytest tests/test_cloud_local.py      # the real Worker under wrangler dev (npm install in cloud/)
 ```
 
 ## Commands
@@ -23,6 +24,7 @@ CROW_REPO=<built Crow clone> pytest                     # also runs Crow's adjud
 | `roaas verify-delivery DOC [--order FILE --fingerprint HEX --telemetry FILE]` | Buyer-side check of a `roaas-episode/1` delivery: the document alone, or with the full telemetry |
 | `roaas offers build --fingerprint HEX [--out crow] [--rehearsal]` | Generates the Crow deal template, the seller adapter configuration and the offer catalogue (see `crow/README.md`) |
 | `roaas scope ORDER` | The Crow scope a buyer sends for an order |
+| `roaas agent --cloud URL --robot-info FILE [--host IP --live]` | The lab agent: one outbound WebSocket to the job API; validates quotes with the lab's rules, runs approved jobs, uploads results (`ROAAS_LAB_TOKEN` in the environment; needs `pip install -e ".[agent]"`) |
 | `roaas terms ORDER --template FILE` | The deal terms filled for that order, for Crow's `check-delivery.ts` |
 
 `--live` is required for any robot that is not on this machine. The operator then types `ENABLE`. Without

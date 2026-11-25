@@ -26,15 +26,13 @@ flowchart LR
   O <--> E
   O --> J
   A -->|"quote, start, result"| V
-  subgraph vercel ["ROaaS cloud (Vercel)"]
-    V["Job API (Python)"]
-    DB[("Postgres<br/>jobs, quotes, heartbeats")]
-    BL[("Blob<br/>encrypted full telemetry")]
+  subgraph cf ["ROaaS cloud (Cloudflare Workers, free plan)"]
+    V["Job API Worker"]
+    DB[("Durable Object (SQLite)<br/>quotes, jobs, status, files")]
     W["Site, validate, status"]
   end
   V --- DB
-  V --- BL
-  L["Lab agent<br/>mini PC, Windows 10"] -->|"heartbeat, claim, upload<br/>outbound HTTPS only"| V
+  L["Lab agent<br/>mini PC, Windows 10"] -->|"one outbound WebSocket<br/>+ HTTPS uploads"| DB
   L -->|"29999 / 30004 over Ethernet"| R["DOBOT CR3A"]
   V -->|"email"| Op["Operator"]
   Op -->|"ENABLE at the console"| L
@@ -43,7 +41,7 @@ flowchart LR
 | Tier | Component | Runs on | Decides | Holds |
 |---|---|---|---|---|
 | **Contract and money** | Crow seller adapter | Crow's Cloudflare account (hosted seller) | Signs offers and deliveries, watches the escrow, encrypts, handles refunds | Crow selling key (secp256k1), credential for our job API |
-| **Shop** | Job API, site | Vercel | Accept or refuse, price, deadline, robot online, queue, rate limits; stores results | Adapter credential (to check it), lab-agent token hash, DB/Blob/email tokens |
+| **Shop** | Job API, site | Cloudflare Worker + one SQLite Durable Object per robot | Accept or refuse, price, deadline, robot online, queue, rate limits; stores results | Adapter credential, lab-agent token, email key (Worker secrets) |
 | **Robot** | Lab agent, robot adapters | Lab mini PC | Re-validation against **local** limits, approval, execution, recording, data signature, verification, packaging | P-256 data-signing key, serial HMAC salt, lab-agent token |
 
 **Safety rule:** the lab never relies on the cloud for safety. A compromised cloud can queue a job, but it
@@ -55,29 +53,29 @@ cannot make the robot leave the limits stored on the mini PC, and it cannot skip
 sequenceDiagram
   participant B as Buyer agent
   participant A as Crow adapter
-  participant V as Job API (Vercel)
+  participant V as Job API (Cloudflare)
   participant L as Lab agent (mini PC)
   participant Op as Operator
   participant R as CR3A
-  loop every 10 s
-    L->>V: heartbeat (robot status) and claim
-  end
+  L->>V: opens one WebSocket (outbound), then robot status every 10 s
   B->>A: POST /quote {buyer, scope}
   A->>V: POST /api/crow/quote {buyer, scope}
-  V->>V: decode order, validate, robot ready?, queue, rate limit, estimate
+  V->>V: scope consistent? robot online and ready? queue, rate limit
+  V->>L: validate (over the WebSocket)
+  L-->>V: errors or estimate (the lab's own Python rules)
   V-->>A: {price, quoteId, deliverWithinSec} or an error
   A-->>B: {commitmentId, price, fees, expiresAt}
   B->>A: funds the hold (price + adjudication fee)
   A->>V: POST /api/crow/jobs {commitmentId, quoteId, scope}
-  V->>V: confirm the commitment is Held (operators' public API)
+  V->>V: from the operators: Held, deliverBy, buyer, terms name this order
   V-->>A: {jobId}
   V->>Op: email "job waiting for approval"
-  L->>V: claim, receives the job
+  V->>L: the job (over the WebSocket)
   L->>L: re-validate against local limits, check the deadline
   Op->>L: types ENABLE (on-site policy)
   L->>R: home, waypoints, home; record at 125 Hz
   L->>L: sign, verify, build episode.json, encrypt full telemetry
-  L->>V: full telemetry to Blob, then episode.json
+  L->>V: PUT encrypted telemetry, then PUT episode.json (HTTPS)
   A->>V: GET /api/crow/jobs/{jobId}/result
   V-->>A: 200 episode.json
   A->>A: pre-runs the checks, encrypts, delivers
@@ -103,15 +101,16 @@ roaas/
     settlement/            crow (via the job API), manual (today's email and zip flow)
     cli.py                 roaas status | open | close | pause | queue | approve | submit --manual | offers build
   provider/tests/          pytest; the fake controller on random ports
-  api/                     Vercel functions (Python): job API, validate, status
-  public/                  static site: offers, card, buyer guide
+  cloud/                   Cloudflare Worker (TypeScript): job API, Durable Object `Lab`, static site in cloud/public
+  scripts/                 crow_sim_rehearsal.py: a full deal on Crow's local simulator
   crow/                    generated hosted-seller configuration (no secrets)
   docs/
 ```
 
-**Why Python on Vercel:** the quote and the lab run the **same** `roaas` code for validation, estimation and
-check generation, so there is one source of truth. The Vercel project's root is the repository root, with
-`api/`, `public/` and a `requirements.txt` for the cloud. The lab agent depends only on `cryptography`.
+**Where the rules live:** robot validation and estimates exist once, in Python (`roaas`). The Worker asks the
+lab agent to validate each quote over its WebSocket, so a quote can only succeed while the lab is online,
+which is the "robot online" rule. The Worker itself checks only that the scope is consistent (hash, nonce,
+task, robot) and computes the price from `crow/pricing.json`.
 
 ### 3.2 Robot adapter interface
 
@@ -120,7 +119,7 @@ class RobotAdapter(Protocol):
     robot_id: str                     # "dobot_cr3a"
     model: str                        # "DOBOT CR3A"
 
-    # pure: no sockets; importable on Vercel
+    # pure: no sockets; run by the lab agent to answer quote validations
     def task_types(self) -> list[TaskType]: ...         # name, params schema, description
     def public_limits(self) -> dict: ...                # what we publish (lab_limits_cr3a.json)
     def validate(self, task: Task) -> Validation: ...   # errors and warnings; never clamps
@@ -152,49 +151,48 @@ be added later without changes elsewhere.
 
 ### 3.3 Lab agent (mini PC)
 
-- **Every 10 s** it runs `probe()`, a read-only call (`RobotMode()`, `GetErrorID()` on 29999), then sends a
-  heartbeat and a claim in a single call:
-  `{robot_id, ready, reason, mode, alarms, tcp_mode, on_duty, busy, kit_version, clock_offset_ms}`.
-- **Ready** (D16) means: the dashboard answers (TCP mode, DobotStudio Pro not holding the robot), the robot
-  is in mode 4 (disabled), and there are no alarms.
+`roaas agent --cloud https://<worker> --robot-info robot_info_cr3a.json --host 192.168.5.1 --live`, with the
+token in the `ROAAS_LAB_TOKEN` environment variable.
+
+- **One outbound WebSocket** to `/api/lab/ws`, with a bearer token. It reconnects with backoff. Messages:
+  - cloud → lab: `validate {id, order_text}`, `job {job}`;
+  - lab → cloud: `hello`/`status {ready, reason, on_duty, busy}` (status every 10 s, from a read-only
+    `probe()`), `validate_result`, `job_event {state}`.
+- **Ready** (D16) means: the dashboard answers (TCP mode, DobotStudio Pro not holding the robot), the robot is
+  in mode 4 (disabled), and there are no alarms.
 - **For each job:**
-  1. re-validate against the local limits file;
-  2. check the deadline: now + estimate + margin must be before `deliverBy`;
-  3. approval;
+  1. re-validate against the public **and** the local limits;
+  2. check the deadline: the estimate plus 10 min must end before `deliverBy`;
+  3. approval: on site, `ENABLE` typed at the console;
   4. run;
   5. verify;
-  6. package;
-  7. upload;
-  8. report each state change.
-- **One robot lock:** one job at a time, and manual jobs take the same lock.
-- **Windows:** a console process during the on-site phase; a Windows service once `auto` is enabled.
+  6. build `roaas-episode/1`;
+  7. `PUT /api/lab/jobs/<id>/telemetry`, then `PUT …/episode`.
+- **One robot lock:** the status probe never touches the dashboard while a job runs.
+- **Dependencies:** `cryptography` and `websockets`.
 
-### 3.4 Job API (Vercel)
+### 3.4 Job API (Cloudflare Worker + Durable Object)
 
 | Method | Path | Caller | Auth | Purpose |
 |---|---|---|---|---|
-| POST | `/api/crow/quote` | Crow adapter | Bearer (adapter credential) | Validate, check readiness, price, `deliverWithinSec` |
-| POST | `/api/crow/jobs` | Crow adapter | Bearer | Start a job. Idempotent on `commitmentId`; confirms the commitment is Held before queueing |
-| GET | `/api/crow/jobs/{jobId}/result` | Crow adapter | Bearer | 202 while the job runs, 200 with `episode.json` |
-| POST | `/api/lab/heartbeat` | Lab agent | Lab token | Status in; the next job (with a lease) out |
-| POST | `/api/lab/jobs/{jobId}/events` | Lab agent | Lab token | `approved`, `declined`, `running`, `failed`, `packaged` |
-| POST | `/api/lab/jobs/{jobId}/upload-url` | Lab agent | Lab token | A Blob client-upload token for the full telemetry |
-| PUT | `/api/lab/jobs/{jobId}/episode` | Lab agent | Lab token | `episode.json` (at most 1 MiB) |
-| POST | `/api/validate` | Anyone | Rate-limited | Detailed reasons why an order would be refused (the adapter hides our error bodies) |
-| GET | `/api/status` | Anyone | None | Robot online and ready, queue length; no job details |
-| GET | `/`, `/offers`, `/card` | Anyone | None | Site, offer documentation, agent card |
+| POST | `/api/crow/quote` | Crow adapter | `X-ROaaS-Key` | Scope consistency, robot online, queue, rate limit, lab validation, price |
+| POST | `/api/crow/jobs` | Crow adapter | `X-ROaaS-Key` | Start. Idempotent on `commitmentId`. Requires Held on every operator and terms that name the quoted order; reads `deliverBy` and the buyer |
+| GET | `/api/crow/jobs/{jobId}/result` | Crow adapter | `X-ROaaS-Key` | 202 while the job runs, 200 with `episode.json` |
+| GET (WebSocket) | `/api/lab/ws` | Lab agent | Bearer lab token | Status, validations, jobs |
+| PUT | `/api/lab/jobs/{jobId}/telemetry` | Lab agent | Bearer lab token | Encrypted full telemetry (at most 100 MB) |
+| PUT | `/api/lab/jobs/{jobId}/episode` | Lab agent | Bearer lab token | `episode.json`: refused unless it names this deal, this order and the uploaded telemetry |
+| GET | `/api/lab/jobs` | Operator | Bearer lab token | The last 50 jobs |
+| GET | `/t/{jobId}.enc` | Anyone (the buyer) | None | Encrypted full telemetry: useless without the key from the delivery |
+| POST | `/api/validate` | Anyone | None | Detailed reasons why an order would be refused (the adapter hides our error bodies) |
+| GET | `/api/status`, `/api/offers` | Anyone | None | Robot online, accepting, queue; offer catalogue |
+| GET | `/` | Anyone | None | Static site (`cloud/public`) |
 
-- **Storage:**
-  - **Postgres** (Neon, through the Vercel Marketplace): quotes, jobs, job events, the last heartbeat and
-    rate-limit counters.
-  - **Blob:** the encrypted full telemetry, kept for N days (placeholder).
-  - Vercel functions accept at most 4.5 MB per request, so the full telemetry goes straight to Blob with a
-    client-upload token.
-- **Email:** sent through a transactional provider (placeholder; for example Resend) when a job is funded,
-  when a job fails, and when the robot has been offline for more than X minutes while the operator is on
-  duty.
-- **Load:** one heartbeat-and-claim call every 10 s is about 260 000 calls per month. This must be checked
-  against the plan's limits; the Hobby plan is non-commercial anyway.
+- **Storage:** the Durable Object's SQLite holds quotes, jobs, events, status, and files in 1 MB chunks. A
+  daily alarm deletes files after `RETENTION_DAYS` (30). No R2.
+- **Free plan:** SQLite Durable Objects; idle hibernating objects are not billed; request bodies up to
+  100 MB; 50 subrequests per invocation (we make at most 3, to the operators).
+- **Email:** Resend, if `RESEND_API_KEY` and `NOTIFY_TO` are set (a job is funded, a job fails); otherwise a
+  log line.
 
 ### 3.5 Crow configuration (`crow/`)
 
@@ -401,8 +399,8 @@ because nothing was delivered yet.
 | Data | Lives in | Seen by |
 |---|---|---|
 | `raw.bin` | Mini PC only | Lab |
-| Full telemetry | Blob, encrypted | Anyone with the key: adjudicators, the buyer after release, us |
-| `episode.json` | Vercel, then Crow (encrypted) | Us; the three adjudicators; the buyer after release |
+| Full telemetry | Durable Object SQLite, encrypted | Anyone with the key: adjudicators, the buyer after release, us |
+| `episode.json` | Durable Object, then Crow (encrypted) | Us; the three adjudicators; the buyer after release |
 | Terms (order text, pinned fingerprint, price, payout address, checks) | Sepolia, public | Everyone |
 | Robot serial | Never published | Only its HMAC is published |
 | IP addresses, hostnames, OS | Removed from the manifest | Nobody |
@@ -410,11 +408,11 @@ because nothing was delivered yet.
 | Secret | Where |
 |---|---|
 | Crow selling key | Crow Worker secret (testnet; production needs D6) |
-| Job API credential for the adapter | Crow Worker secret and Vercel env (hash) |
-| Lab-agent token | Mini PC `keys/`, plus its hash in Vercel env |
+| Job API credential for the adapter | Crow Worker secret and our Worker secret `ADAPTER_KEY` |
+| Lab-agent token | Mini PC environment (`ROAAS_LAB_TOKEN`), and our Worker secret `LAB_TOKEN` |
 | P-256 data-signing key | Mini PC `keys/` |
 | Serial HMAC salt | Mini PC environment |
-| Postgres, Blob and email tokens | Vercel env |
+| Email key | Our Worker secret `RESEND_API_KEY` |
 
 **Defences in depth:**
 
@@ -446,7 +444,7 @@ a fallback (D10).
   - the fake robot;
   - the job API locally;
   - Crow's local simulation: `pnpm sim`, plus the Node adapter with `--sim`, pointed at the local job API.
-- **Testnet:** Vercel production, Crow's hosted adapter on Sepolia, the mini PC.
+- **Testnet:** our Worker on `*.workers.dev`, Crow's hosted adapter on Sepolia, the mini PC.
 - **If Crow cannot host the adapter:**
   1. the same core as our own Cloudflare Worker (`apps/hosted-sellers`);
   2. the Node adapter behind a tunnel.
@@ -459,7 +457,7 @@ a fallback (D10).
 |---|---|---|
 | 3 ✅ | `roaas` core and `dobot_cr3a` adapter wrapping the kit: approval callback, recorder after approval, manifest 0.6, estimate, preview, two-level packaging; `fake` robot; manual path | pytest green against the fake controller; a v0.6 episode verifies; tampering is detected |
 | 4 ✅ | Offer and check generator; the two templates | Generated deliveries pass Crow's `check-delivery.ts`, and tampered ones fail |
-| 5 | Job API on Vercel, lab agent, end to end in Crow's local simulation, then Sepolia with the hosted adapter and the fake robot | One deal Released and one Refunded on testnet |
+| 5 🟡 | Job API on Cloudflare, lab agent, end to end in Crow's local simulation ✅ (Released, 2026-11-25), then Sepolia with the hosted adapter | One deal Released on testnet |
 | 6 | Operator CLI (`queue`, `approve`, `decline`, `open`, `close`, `pause`) and emails | The operator can run a day of jobs from the CLI |
 | 7 | Docs: provider setup (Windows, Linux), adding a robot, offer authoring, buyer guide for Crow | — |
 | 8 | One real testnet job on the CR3A, with the operator present | Released, and the buyer's offline verification passes |
@@ -467,7 +465,6 @@ a fallback (D10).
 ## 11. Open points
 
 - Answers to Q1, Q2, Q3, Q5 and Q11 may simplify section 4.
-- Vercel details, to confirm in phase 5: the Python runtime layout, Blob client uploads from Python, and
-  invocation limits.
+- Cloudflare: deploy from the lab's own account (`docs/setup/cloudflare.md`).
 - Prices, deadlines, maximum queue length, retention days and maximum job duration are placeholders, set in
   `pricing.yaml` and `limits`.

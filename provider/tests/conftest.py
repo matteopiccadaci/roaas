@@ -41,6 +41,13 @@ class FakeRobot:
             cwd=KIT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         _wait_port(self.dashboard_port)
         _wait_port(self.feedback_port)
+        # make sure it is OUR fake controller on these ports (not another process that took a freed port)
+        if self.proc.poll() is not None:
+            raise RuntimeError("fake controller exited: a port was probably taken")
+        with socket.create_connection(("127.0.0.1", self.dashboard_port), timeout=5) as s:
+            s.sendall(b"RobotMode()")
+            if b"RobotMode()" not in s.recv(256):
+                raise RuntimeError(f"port {self.dashboard_port} does not answer like the fake controller")
 
     @property
     def ports(self):

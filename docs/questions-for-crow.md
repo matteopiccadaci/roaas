@@ -15,8 +15,8 @@ Status values: `open`, `asked`, `answered`, `dropped`.
   - Can the selling key stay with us through `CROW_SIGNER_URL`, or must it be a Worker secret in your
     account?
 - **Why:** The whole deployment plan assumes this (decision D3). The fallback is our own Cloudflare Worker.
-- **Status:** open
-- **Answer:**
+- **Status:** assumed yes (the lab is in contact with Rafael); details to agree
+- **Answer:** What we will send once our Worker is deployed: `crow/seller.json` and `crow/template.json` (with the job API's URL filled in), and the value of `ROAAS_JOB_API_KEY` through a private channel. The payout address is left out, so payments go to the signing key, unless we give one. The configuration was tested with Crow's own `seller-adapter.ts --sim` against our Worker: deal Released (D20).
 - **Date:**
 
 ## Q2. When will `signature_valid` be built?

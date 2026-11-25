@@ -74,7 +74,7 @@ def test_kit_verifier_still_accepts_v06(recorded):
     # check the nonce only; legacy orders keep the full --order check (test below).
     task, ep = recorded
     r = subprocess.run([sys.executable, str(KIT / "verify_episode.py"), str(ep.path), "--nonce", task.nonce],
-                       cwd=KIT, capture_output=True, text=True)
+                       cwd=KIT, capture_output=True, text=True, timeout=180)
     assert r.returncode == 0 and "RESULT: episode VALID" in r.stdout, r.stdout
 
 
@@ -85,7 +85,7 @@ def test_legacy_order_end_to_end_with_kit_verifier(fake_robot, robot_info, signe
     ep = run(task, fake_robot, robot_info, signer, tmp_path / "ep", deal=Deal(settlement="manual"))
     (tmp_path / "my_order.json").write_bytes(legacy)
     r = subprocess.run([sys.executable, str(KIT / "verify_episode.py"), str(ep.path), "--order",
-                        str(tmp_path / "my_order.json")], cwd=KIT, capture_output=True, text=True)
+                        str(tmp_path / "my_order.json")], cwd=KIT, capture_output=True, text=True, timeout=180)
     assert r.returncode == 0 and "RESULT: episode VALID" in r.stdout, r.stdout
 
 
@@ -106,7 +106,7 @@ def test_crow_delivery_roundtrip(recorded, tmp_path):
     plain = crypto.decrypt(ct, crypto.unb64(doc["full_telemetry"]["key"]))
     folder = reconstruct_episode_dir(doc, plain, tmp_path / "rebuilt")
     r = subprocess.run([sys.executable, str(KIT / "verify_episode.py"), str(folder), "--nonce", task.nonce,
-                        "--fingerprint", fp], cwd=KIT, capture_output=True, text=True)
+                        "--fingerprint", fp], cwd=KIT, capture_output=True, text=True, timeout=180)
     assert r.returncode == 0, r.stdout
     assert sha256_hex((folder / "order.json").read_bytes()) == doc["manifest"]["order"]["order_sha256"]
 
@@ -190,7 +190,7 @@ def test_repeatability_run(fake_robot, robot_info, signer, tmp_path):
 
 def test_cli_validate_legacy_example():
     r = subprocess.run([sys.executable, "-m", "roaas.cli", "validate", str(KIT / "example_order.json")],
-                       cwd=KIT.parents[1] / "provider", capture_output=True, text=True)
+                       cwd=KIT.parents[1] / "provider", capture_output=True, text=True, timeout=180)
     assert r.returncode == 0 and "Order buyer-demo-0001 OK" in r.stdout, r.stdout + r.stderr
 
 
@@ -206,14 +206,14 @@ def test_cli_manual_run_and_verify_delivery(fresh_fake_robot, tmp_path):
                         str(KIT / "lab_limits_cr3a.json"), "--crow-delivery",
                         "--dashboard-port", str(fresh_fake_robot.dashboard_port),
                         "--feedback-port", str(fresh_fake_robot.feedback_port)],
-                       cwd=tmp_path, env=env, capture_output=True, text=True)
+                       cwd=tmp_path, env=env, capture_output=True, text=True, timeout=180)
     assert r.returncode == 0, r.stdout + r.stderr
     doc = next((tmp_path / "deliveries").glob("*.roaas-episode.json"))
     enc = doc.with_name(doc.name.replace(".roaas-episode.json", ".telemetry.enc"))
     fp = json.loads(doc.read_text())["manifest"]["signer"]["pubkey_sha256"]
     r = subprocess.run([sys.executable, "-m", "roaas.cli", "verify-delivery", str(doc), "--order",
                         str(tmp_path / "order.json"), "--fingerprint", fp, "--telemetry", str(enc)],
-                       cwd=tmp_path, env=env, capture_output=True, text=True)
+                       cwd=tmp_path, env=env, capture_output=True, text=True, timeout=180)
     assert r.returncode == 0 and "RESULT: delivery VALID" in r.stdout, r.stdout + r.stderr
 
 
@@ -244,6 +244,6 @@ def test_crow_adjudicator_code_accepts_rehearsal_and_rejects_simulator_in_produc
     for name, rehearsal, expected in (("rehearsal", True, 0), ("production", False, 1)):
         (tmp_path / f"{name}.json").write_text(json.dumps(ct.terms_for(ct.template(CR3A, fp, rehearsal=rehearsal), scope)))
         r = subprocess.run(["node", "examples/check-delivery.ts", str(tmp_path / f"{name}.json"),
-                            str(tmp_path / "delivery.json")], cwd=os.environ["CROW_REPO"], capture_output=True, text=True)
+                            str(tmp_path / "delivery.json")], cwd=os.environ["CROW_REPO"], capture_output=True, text=True, timeout=180)
         assert r.returncode == expected, r.stdout + r.stderr
     assert "FAIL  run (required): schema: /manifest: /recorder: /simulator" in r.stdout

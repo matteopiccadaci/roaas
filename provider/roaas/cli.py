@@ -9,6 +9,8 @@
                                                 Crow deal template, seller adapter config, offer catalogue
   roaas scope ORDER                             the Crow scope a buyer sends for this order
   roaas terms ORDER --template FILE             the filled deal terms for this order (for check-delivery.ts)
+  roaas agent --cloud URL --robot-info FILE [--host IP --live]
+                                                the lab agent: connects out to the job API, runs approved jobs
 
 Moving a robot that is not on this machine needs --live, and then the operator types ENABLE.
 """
@@ -156,6 +158,27 @@ def cmd_terms(a):
         print(text)
 
 
+def cmd_agent(a):
+    import os
+    from .agent.agent import LabAgent
+    from .robots.dobot_cr3a.kit import signers
+
+    token = os.environ.get(a.token_env, "")
+    if not token:
+        sys.exit(f"[agent] set {a.token_env} to the lab token (never put it in a file you share)")
+    if not approvals.is_local_host(a.host) and not a.live:
+        sys.exit("[agent] a robot that is not on this machine needs --live (the operator types ENABLE for each job)")
+    agent = LabAgent(cloud=a.cloud, token=token, robot_info=json.loads(Path(a.robot_info).read_text(encoding="utf-8")),
+                     host=a.host, approval=approvals.OnSiteConsole() if a.live else approvals.SimulatorOnly(),
+                     signer=signers.make_signer(a.signer, a.keys_dir), out_dir=Path(a.out),
+                     dashboard_port=a.dashboard_port, feedback_port=a.feedback_port, on_duty=not a.off_duty)
+    try:
+        agent.run()
+    except KeyboardInterrupt:
+        agent.stop.set()
+        print("\n[agent] stopped")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="roaas", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -206,6 +229,19 @@ def main(argv=None):
     p.add_argument("--template", required=True)
     p.add_argument("--out")
     p.set_defaults(func=cmd_terms)
+    p = sub.add_parser("agent")
+    p.add_argument("--cloud", required=True, help="base URL of the ROaaS job API, e.g. https://roaas.<you>.workers.dev")
+    p.add_argument("--robot-info", required=True)
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--live", action="store_true")
+    p.add_argument("--signer", choices=["software", "tpm"], default="software")
+    p.add_argument("--keys-dir", default="keys")
+    p.add_argument("--out", default="episodes")
+    p.add_argument("--dashboard-port", type=int, default=29999)
+    p.add_argument("--feedback-port", type=int, default=30004)
+    p.add_argument("--token-env", default="ROAAS_LAB_TOKEN")
+    p.add_argument("--off-duty", action="store_true", help="connect, but accept no quotes")
+    p.set_defaults(func=cmd_agent)
     a = ap.parse_args(argv)
     a.func(a)
 

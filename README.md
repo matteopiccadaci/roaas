@@ -16,11 +16,15 @@ plug in later as adapters, without changing the core.
 | --- | --- |
 | `kits/dobot_kit/` | The existing lab kit, v0.4.5, unchanged (the robot's private `robot_info_cr3a.json` is replaced by `robot_info_cr3a.example.json`) |
 | `kits/dobot_kit_client/` | The buyer edition of the same kit, v0.4.5 |
+| `provider/` | Python package `roaas`: core, CR3A adapter, Crow terms, lab agent (see its README) |
+| `cloud/` | Job API on Cloudflare Workers (free plan): Worker and SQLite Durable Object, status page |
+| `crow/` | Generated Crow deal template, seller adapter config, offer catalogue |
+| `scripts/crow_sim_rehearsal.py` | A full deal on Crow's local simulator, with our Worker, the agent and the fake robot |
 | `docs/ARCHITECTURE.md` | Proposed architecture: tiers, interfaces, schemas, checks, plan |
 | `docs/CROW_SELLER_REPORT.md` | How Crow's seller side works and what it means for this project |
 | `docs/decisions.md` | Decision log |
 | `docs/questions-for-crow.md` | Open questions for the Crow team, with their answers |
-| `docs/setup/` | Setup notes (lab mini PC network, later provider setup) |
+| `docs/setup/` | Setup: lab mini PC network, Cloudflare deploy and lab agent (`cloudflare.md`) |
 
 ## Safety rules
 

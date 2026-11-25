@@ -143,4 +143,22 @@ every deal's delivery window must exceed 2 h, even in `auto` mode.
 - **Verified offline with Crow's adjudicator code** (commit `423ffcd`): good deliveries are accepted and every
   tampering is rejected (ARCHITECTURE §4.5).
 
+**D20. Cloudflare instead of Vercel** (phase 5, on advice received by the lab). The job API is a Cloudflare
+Worker on the free plan, with one SQLite Durable Object per robot.
+
+- **The Durable Object holds** the quotes, the job queue, the robot's status, and the files (deliveries and
+  encrypted telemetry, in 1 MB chunks, deleted after the retention period). There is no R2, which might need
+  a payment method.
+- **The lab agent connects OUT over one WebSocket** (WebSocket hibernation, free while idle). It validates
+  every quote with the lab's own Python rules, so the rules have one source; it receives jobs and uploads
+  results over HTTPS.
+- **"Robot online"** means: the socket is connected, there is a fresh status, the robot is ready (D16) and
+  the operator is on duty.
+- **At start, the Worker reads from Crow's operators** that the hold is funded, the real `deliverBy`, the
+  buyer's address, and that the terms name the quoted order (`orderSha256`).
+- **The quote rate limit is global:** the seller adapter does not pass the buyer to `quote`.
+- **Verified locally:** with `wrangler dev`, the lab agent and the fake robot (`tests/test_cloud_local.py`).
+  A full deal on Crow's simulator (`scripts/crow_sim_rehearsal.py`), with Crow's own seller adapter and buyer,
+  ends **Released**.
+
 Open questions for Crow are tracked in `questions-for-crow.md`.

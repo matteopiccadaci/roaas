@@ -35,7 +35,6 @@
     }
   },
   "signingKey": "standing",
-  "payoutAddress": "PLACEHOLDER",
   "timing": {
     "offerExpiresInSec": 3600,
     "fundWithinSec": 7200,

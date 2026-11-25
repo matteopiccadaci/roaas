@@ -143,7 +143,7 @@ def template(adapter, fingerprint: str, limits: Optional[dict] = None, rehearsal
             "checks": checks}
 
 
-def adapter_config(job_api_base: str, payout_address: str = "PLACEHOLDER", timing: Optional[dict] = None,
+def adapter_config(job_api_base: str, payout_address: str = "", timing: Optional[dict] = None,
                    quote_requests_per_minute: int = 30) -> Dict[str, Any]:
     t = dict(TIMING, **(timing or {}))
     if t["deliverWithinSec"] < MIN_DELIVER_WITHIN_SEC:
@@ -157,7 +157,8 @@ def adapter_config(job_api_base: str, payout_address: str = "PLACEHOLDER", timin
                       "result": f"{base}api/crow/jobs/{{jobId}}/result"},
         "quoteRateLimit": {"overall": {"requests": quote_requests_per_minute, "windowSec": 60}},
         "signingKey": "standing",
-        "payoutAddress": payout_address,
+        # left out until a real address is set: payments then go to the signing key's own address
+        **({"payoutAddress": payout_address} if re.fullmatch(r"0x[0-9a-fA-F]{40}", payout_address or "") else {}),
         "timing": t,
         "pollMs": 3000,
         "redelivery": {"refetchEverySec": 60},

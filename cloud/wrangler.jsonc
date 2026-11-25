@@ -1,0 +1,24 @@
+// ROaaS job API on Cloudflare Workers (free plan): one Worker and one SQLite Durable Object per robot, which also
+// stores the deliveries and the encrypted telemetry (no R2, so no paid add-on).
+// Secrets (never in this file): ADAPTER_KEY (Crow's seller adapter sends it in X-ROaaS-Key), LAB_TOKEN (the lab
+// agent's bearer token), optional RESEND_API_KEY for operator emails. Set them with `wrangler secret put <NAME>`.
+{
+  "name": "roaas",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-09-15",
+  "assets": { "directory": "public", "binding": "ASSETS", "run_worker_first": ["/api/*", "/t/*"] },
+  "durable_objects": { "bindings": [{ "name": "LAB", "class_name": "Lab" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Lab"] }],
+  "vars": {
+    // Crow operators, to confirm a commitment is Held before queueing its job (decision: defence in depth).
+    "OPERATORS": "https://api.crow.direct,https://api2.crow.direct",
+    "ROBOT_ID": "dobot_cr3a",
+    "MAX_QUEUE": "3",
+    "QUOTES_PER_HOUR": "60",
+    "QUOTE_VALID_SEC": "900",
+    "RETENTION_DAYS": "30",
+    "NOTIFY_TO": "",
+    "NOTIFY_FROM": "ROaaS <onboarding@resend.dev>"
+  },
+  "observability": { "enabled": true }
+}
