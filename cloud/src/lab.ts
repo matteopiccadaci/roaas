@@ -87,10 +87,14 @@ export class Lab extends DurableObject<Env> {
     const age = Date.now() - Number(this.kvGet('status_ms') ?? 0);
     const connected = this.agent() !== undefined;
     const online = connected && age < STATUS_MAX_AGE_MS;
-    const accepting = online && st.ready === true && st.on_duty === true && !st.paused;
-    return { robot: this.env.ROBOT_ID, online, accepting, ready: !!st.ready, on_duty: !!st.on_duty, busy: !!st.busy,
-             reason: online ? (st.reason ?? '') : 'lab agent not connected', queue: this.queueLength(),
-             last_seen_s: raw ? Math.round(age / 1000) : null };
+    // Operator state lives here (roaas ops open|close|pause|resume); the agent's hello sets on_duty initially.
+    const onDuty = this.kvGet('on_duty') === '1';
+    const paused = this.kvGet('paused') === '1';
+    const accepting = online && st.ready === true && onDuty && !paused;
+    const reason = !online ? 'lab agent not connected' : paused ? 'paused by the operator'
+      : !onDuty ? 'operator off duty' : (st.reason ?? '');
+    return { robot: this.env.ROBOT_ID, online, accepting, ready: !!st.ready, on_duty: onDuty, paused, busy: !!st.busy,
+             reason, queue: this.queueLength(), last_seen_s: raw ? Math.round(age / 1000) : null };
   }
 
   private askLab(msg: Json): Promise<Json> {
@@ -174,6 +178,10 @@ export class Lab extends DurableObject<Env> {
       }
       m = p.match(/^\/lab\/jobs\/([A-Za-z0-9-]{1,80})\/(telemetry|episode)$/);
       if (m && req.method === 'PUT') return m[2] === 'telemetry' ? this.putTelemetry(m[1]!, req) : this.putEpisode(m[1]!, req, url.origin);
+      const op = p.match(/^\/lab\/ops\/(open|close|pause|resume)$/);
+      if (op && req.method === 'POST') return this.operator(op[1]!);
+      m = p.match(/^\/lab\/jobs\/([A-Za-z0-9-]{1,80})\/(retry|decline)$/);
+      if (m && req.method === 'POST') return m[2] === 'retry' ? this.retry(m[1]!, url.origin) : this.decline(m[1]!, req);
       if (p === '/lab/jobs') return json(this.sql.exec('SELECT id, commitment_id, buyer, state, detail, deliver_by_ms, updated_ms FROM jobs ORDER BY created_ms DESC LIMIT 50').toArray());
       return json({ error: 'not found' }, 404);
     } catch (e) {
@@ -205,7 +213,7 @@ export class Lab extends DurableObject<Env> {
     const n = this.sql.exec('SELECT COUNT(*) AS n FROM quotes WHERE created_ms > ?', Date.now() - 3_600_000).one().n as number;
     if (n >= Number(this.env.QUOTES_PER_HOUR)) return json({ error: 'too many quotes; try later' }, 429, { 'retry-after': '600' });
     const st = this.status();
-    if (!st.accepting) return json({ error: 'robot not available', reason: st.reason || (st.on_duty ? 'robot not ready' : 'operator off duty') }, 503);
+    if (!st.accepting) return json({ error: 'robot not available', reason: st.reason || 'robot not ready' }, 503);
     if (st.queue >= Number(this.env.MAX_QUEUE)) return json({ error: 'queue full' }, 503, { 'retry-after': '1800' });
     const v = await this.askLab({ type: 'validate', order_text: body.scope.orderText });
     if (!v.ok) return json({ error: 'order refused', errors: v.errors }, 422);
@@ -293,6 +301,35 @@ export class Lab extends DurableObject<Env> {
     return json({ ok: true });
   }
 
+  // ------------------------------------------------------------------ operator commands (roaas ops ...)
+  private operator(action: string): Response {
+    if (action === 'open' || action === 'close') this.kvSet('on_duty', action === 'open' ? '1' : '0');
+    else this.kvSet('paused', action === 'pause' ? '1' : '0');
+    return json(this.status());
+  }
+
+  private retry(id: string, origin: string): Response {
+    const j = this.job(id);
+    if (!j) return json({ error: 'unknown job' }, 404);
+    if (!['failed', 'declined', 'awaiting_approval', 'claimed', 'started'].includes(j.state)) return json({ error: `job is ${j.state}` }, 409);
+    if (Number(j.deliver_by_ms) < Date.now() + 600_000) return json({ error: 'too close to the delivery deadline' }, 409);
+    this.setState(id, 'started', 'retry requested by the operator');
+    const ws = this.agent();
+    ws?.send(JSON.stringify({ ...this.jobMessage(this.job(id)!, this.kvGet('origin') ?? origin), retry: true }));
+    return json({ ok: true, pushed: ws !== undefined });
+  }
+
+  private async decline(id: string, req: Request): Promise<Response> {
+    const j = this.job(id);
+    if (!j) return json({ error: 'unknown job' }, 404);
+    if (['packaged', 'delivered'].includes(j.state)) return json({ error: `job is ${j.state}` }, 409);
+    const body = (await req.json().catch(() => ({}))) as Json;
+    const why = String(body.reason ?? 'declined by the operator').slice(0, 300);
+    this.setState(id, 'declined', why);
+    this.notify(`job ${id} declined`, `${why}\nNothing will be delivered: the buyer can reclaim the payment after deliverBy (${new Date(Number(j.deliver_by_ms)).toISOString()}).`);
+    return json({ ok: true });
+  }
+
   // ------------------------------------------------------------------ the lab agent's WebSocket
   private acceptAgent(req: Request, origin: string): Response {
     if (req.headers.get('upgrade') !== 'websocket') return json({ error: 'WebSocket upgrade expected' }, 426);
@@ -309,7 +346,10 @@ export class Lab extends DurableObject<Env> {
     if (m.type === 'hello' || m.type === 'status') {
       this.kvSet('status', JSON.stringify(m.status ?? {}));
       this.kvSet('status_ms', String(Date.now()));
-      if (m.type === 'hello') this.pushPending(this.kvGet('origin') ?? '');
+      if (m.type === 'hello') {
+        this.kvSet('on_duty', m.status?.on_duty === false ? '0' : '1');
+        this.pushPending(this.kvGet('origin') ?? '');
+      }
     } else if (m.type === 'validate_result' && typeof m.id === 'string') {
       this.pending.get(m.id)?.(m);
       this.pending.delete(m.id);
@@ -321,5 +361,10 @@ export class Lab extends DurableObject<Env> {
     }
   }
 
-  async webSocketClose(ws: WebSocket, code: number) { ws.close(code, 'closing'); }
+  async webSocketClose(ws: WebSocket, code: number) {
+    ws.close(code, 'closing');
+    if (this.kvGet('on_duty') === '1' && this.ctx.getWebSockets('agent').length === 0 && code !== 4000) {
+      this.notify('lab agent disconnected', `The lab agent disconnected (code ${code}) while the operator is on duty: no quotes are accepted until it reconnects.`);
+    }
+  }
 }

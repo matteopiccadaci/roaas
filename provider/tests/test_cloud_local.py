@@ -7,6 +7,7 @@ Crow's own check-delivery.ts against the rehearsal terms.
 import json
 import os
 import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -165,11 +166,49 @@ def test_full_job_through_the_cloud(cloud, agent, tmp_path):
         assert r.returncode == 0, r.stdout + r.stderr
 
 
-def test_lab_offline_means_no_quotes(cloud, agent):
+def lab_call(base, method, path, body=None):
+    return call(base, method, path, body, key=None, headers={"Authorization": f"Bearer {LAB_TOKEN}"})
+
+
+def test_operator_pause_and_off_duty(cloud, agent):
+    scope = scope_of(ORDER)
+    assert lab_call(cloud, "POST", "/api/lab/ops/pause", {})[0] == 200
+    code, body = call(cloud, "POST", "/api/crow/quote", {"scope": scope})
+    assert code == 503 and b"paused by the operator" in body
+    st = json.loads(lab_call(cloud, "POST", "/api/lab/ops/resume", {})[1])
+    assert st["accepting"] and not st["paused"]
+    lab_call(cloud, "POST", "/api/lab/ops/close", {})
+    code, body = call(cloud, "POST", "/api/crow/quote", {"scope": scope})
+    assert code == 503 and b"operator off duty" in body
+    assert json.loads(lab_call(cloud, "POST", "/api/lab/ops/open", {})[1])["accepting"]
+    assert call(cloud, "POST", "/api/lab/ops/pause", {}, key=None)[0] == 401          # needs the lab token
+    r = subprocess.run([sys.executable, "-m", "roaas.cli", "ops", "status", "--cloud", cloud], capture_output=True,
+                       text=True, timeout=60, env=dict(os.environ, ROAAS_LAB_TOKEN=LAB_TOKEN, PYTHONPATH=str(REPO / "provider")))
+    assert r.returncode == 0 and "ACCEPTING JOBS" in r.stdout, r.stdout + r.stderr
+
+
+def test_lab_offline_means_no_quotes_and_jobs_wait(cloud, agent):
     a, _ = agent
+    order2 = encode_task("dobot_cr3a", "joint_waypoints", "cloud-e2e-002", "abcdefabcdefabcdefabcdefabcdef01",
+                         {"speed_factor": 100, "waypoints": [[3, -3, 6, 6, -6, 12]]})
+    scope2 = scope_of(order2)
+    code, body = call(cloud, "POST", "/api/crow/quote", {"scope": scope2})
+    assert code == 200, body
+    quote2 = json.loads(body)["quoteId"]
     a.stop.set()
     t0 = time.time()
     while time.time() - t0 < 15 and json.loads(call(cloud, "GET", "/api/status", key=None)[1])["online"]:
         time.sleep(0.5)
     code, body = call(cloud, "POST", "/api/crow/quote", {"buyer": "0xb", "scope": scope_of(ORDER)})
     assert code == 503 and b"not available" in body
+    # a deal funded while the lab is away waits; the operator can decline it, or ask for it again
+    cid = "0x" + "d2" * 32
+    code, body = call(cloud, "POST", "/api/crow/jobs", {"commitmentId": cid, "quoteId": quote2, "scope": scope2})
+    assert code == 200, body
+    job = json.loads(body)["jobId"]
+    assert lab_call(cloud, "POST", f"/api/lab/jobs/{job}/decline", {"reason": "robot under maintenance"})[0] == 200
+    assert {j["id"]: j["state"] for j in json.loads(lab_call(cloud, "GET", "/api/lab/jobs")[1])}[job] == "declined"
+    code, body = lab_call(cloud, "POST", f"/api/lab/jobs/{job}/retry", {})
+    assert code == 200 and json.loads(body)["pushed"] is False                       # nobody connected
+    assert {j["id"]: j["state"] for j in json.loads(lab_call(cloud, "GET", "/api/lab/jobs")[1])}[job] == "started"
+    assert call(cloud, "GET", f"/api/crow/jobs/{job}/result")[0] == 202

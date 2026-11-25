@@ -11,6 +11,8 @@
   roaas terms ORDER --template FILE             the filled deal terms for this order (for check-delivery.ts)
   roaas agent --cloud URL --robot-info FILE [--host IP --live]
                                                 the lab agent: connects out to the job API, runs approved jobs
+  roaas ops status|queue|open|close|pause|resume|retry JOB|decline JOB --cloud URL
+                                                the operator's commands (ROAAS_LAB_TOKEN in the environment)
 
 Moving a robot that is not on this machine needs --live, and then the operator types ENABLE.
 """
@@ -169,7 +171,7 @@ def cmd_agent(a):
     if not approvals.is_local_host(a.host) and not a.live:
         sys.exit("[agent] a robot that is not on this machine needs --live (the operator types ENABLE for each job)")
     agent = LabAgent(cloud=a.cloud, token=token, robot_info=json.loads(Path(a.robot_info).read_text(encoding="utf-8")),
-                     host=a.host, approval=approvals.OnSiteConsole() if a.live else approvals.SimulatorOnly(),
+                     host=a.host, approval="on-site-job" if a.live else approvals.SimulatorOnly(),
                      signer=signers.make_signer(a.signer, a.keys_dir), out_dir=Path(a.out),
                      dashboard_port=a.dashboard_port, feedback_port=a.feedback_port, on_duty=not a.off_duty)
     try:
@@ -177,6 +179,48 @@ def cmd_agent(a):
     except KeyboardInterrupt:
         agent.stop.set()
         print("\n[agent] stopped")
+
+
+def cmd_ops(a):
+    import os
+    import urllib.error
+    import urllib.request
+
+    token = os.environ.get(a.token_env, "")
+    if not token:
+        sys.exit(f"[ops] set {a.token_env} to the lab token")
+    base = a.cloud.rstrip("/")
+
+    def call(method, path, body=None):
+        req = urllib.request.Request(base + path, method=method, data=json.dumps(body or {}).encode() if method == "POST" else None,
+                                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return json.loads(r.read() or b"null")
+        except urllib.error.HTTPError as e:
+            sys.exit(f"[ops] {method} {path}: {e.code} {e.read()[:300].decode(errors='replace')}")
+
+    def show_status(st):
+        flag = "ACCEPTING JOBS" if st["accepting"] else "not accepting"
+        print(f"{st['robot']}: {flag}" + (f" ({st['reason']})" if st.get("reason") else ""))
+        print(f"  agent online: {st['online']}   robot ready: {st['ready']}   on duty: {st['on_duty']}   "
+              f"paused: {st.get('paused')}   queue: {st['queue']}   last seen: {st['last_seen_s']} s ago")
+
+    if a.action == "status":
+        show_status(call("GET", "/api/status"))
+    elif a.action == "queue":
+        jobs = call("GET", "/api/lab/jobs")
+        if not jobs:
+            print("no jobs")
+        for j in jobs:
+            due = dt.datetime.fromtimestamp(j["deliver_by_ms"] / 1000).strftime("%Y-%m-%d %H:%M")
+            print(f"{j['id']}  {j['state']:<17} due {due}  {j['commitment_id'][:14]}…  {(j.get('detail') or '')[:60]}")
+    elif a.action in ("open", "close", "pause", "resume"):
+        show_status(call("POST", f"/api/lab/ops/{a.action}"))
+    elif a.action in ("retry", "decline"):
+        if not a.job:
+            sys.exit(f"[ops] {a.action} needs a job id (see `roaas ops queue`)")
+        print(call("POST", f"/api/lab/jobs/{a.job}/{a.action}", {"reason": a.reason} if a.reason else {}))
 
 
 def main(argv=None):
@@ -242,6 +286,13 @@ def main(argv=None):
     p.add_argument("--token-env", default="ROAAS_LAB_TOKEN")
     p.add_argument("--off-duty", action="store_true", help="connect, but accept no quotes")
     p.set_defaults(func=cmd_agent)
+    p = sub.add_parser("ops")
+    p.add_argument("action", choices=["status", "queue", "open", "close", "pause", "resume", "retry", "decline"])
+    p.add_argument("job", nargs="?")
+    p.add_argument("--cloud", required=True)
+    p.add_argument("--reason", help="for decline: why (sent to the operator's email log)")
+    p.add_argument("--token-env", default="ROAAS_LAB_TOKEN")
+    p.set_defaults(func=cmd_ops)
     a = ap.parse_args(argv)
     a.func(a)
 

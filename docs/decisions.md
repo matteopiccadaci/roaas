@@ -161,4 +161,15 @@ Worker on the free plan, with one SQLite Durable Object per robot.
   A full deal on Crow's simulator (`scripts/crow_sim_rehearsal.py`), with Crow's own seller adapter and buyer,
   ends **Released**.
 
+**D21. Phase 6: operator controls.**
+
+- **Operator state lives in the cloud** (`on_duty`, `paused`), changed with `roaas ops open|close|pause|resume`.
+  The agent's `hello` sets `on_duty`.
+- **On-site approval is per job:** the operator types `ENABLE <code>` (the job's last 4 characters), so a
+  prompt left on screen cannot approve another job. `DECLINE` refuses the job for good; Enter leaves it
+  waiting, and `roaas ops retry` asks again. `roaas ops decline` refuses from anywhere.
+- **Emails** (when Resend is configured): a funded job, a failed or declined job, and the agent disconnecting
+  while the operator is on duty.
+- **No web page for now:** the CLI covers the routine (docs/OPERATOR.md).
+
 Open questions for Crow are tracked in `questions-for-crow.md`.

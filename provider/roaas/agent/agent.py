@@ -21,7 +21,8 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .. import __version__
-from ..core.model import Cancelled, Deal, NotReady
+from ..core.approval import OnSiteJobConsole
+from ..core.model import Cancelled, Deal, Declined, NotReady
 from ..core.packaging import build_delivery
 from ..core.tasks import TaskError, parse_task
 from ..robots import get_adapter
@@ -130,7 +131,12 @@ class LabAgent:
         if left_s < v["estimate"]["recording_upper_s"] + DEADLINE_MARGIN_S:
             return self.event(jid, "failed", f"too close to the delivery deadline ({left_s:.0f} s left)")
         self.event(jid, "awaiting_approval")
-        approval = ApprovalWithHook(self.approval, lambda: self.event(jid, "running"))
+        policy = self.approval
+        if policy == "on-site-job":                 # the operator approves THIS job at the robot (ENABLE <code>)
+            header = (f"  job {jid}   commitment {job['commitment_id'][:18]}…   buyer {job.get('buyer') or '?'}\n"
+                      f"  deliver before {time.strftime('%Y-%m-%d %H:%M', time.localtime(job['deliver_by_ms'] / 1000))}")
+            policy = OnSiteJobConsole(jid, header)
+        approval = ApprovalWithHook(policy, lambda: self.event(jid, "running"))
         deal = Deal(settlement="crow", commitment_id=job["commitment_id"], buyer=job.get("buyer"), job_id=jid)
         self.robot_lock.acquire()
         self.busy = True
@@ -139,8 +145,10 @@ class LabAgent:
                                       signer=self.signer, out_dir=self.out_dir, deal=deal, **self.ports)
         except NotReady as e:
             return self.event(jid, "failed", f"robot not ready: {e}")
+        except Declined as e:
+            return self.event(jid, "declined", str(e))
         except Cancelled:
-            return self.event(jid, "failed", "the operator did not approve; restart the agent to be asked again")
+            return self.event(jid, "failed", "left for later by the operator: `roaas ops retry " + jid + "` asks again")
         except Exception as e:  # noqa: BLE001
             return self.event(jid, "failed", f"run error: {e}")
         finally:
@@ -212,7 +220,7 @@ class LabAgent:
             self.send(dict(r, type="validate_result", id=m.get("id")))
         elif m.get("type") == "job":
             job = m["job"]
-            if job["id"] in self.seen:
+            if job["id"] in self.seen and not m.get("retry"):
                 return
             self.seen.add(job["id"])
             self.log(f"[agent] new job {job['id']} for commitment {job['commitment_id'][:18]}…")

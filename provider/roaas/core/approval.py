@@ -38,6 +38,26 @@ class OnSiteConsole:
         return ans.strip().upper() == "ENABLE"
 
 
+class OnSiteJobConsole:
+    """On-site approval of ONE queued job. The operator must type ENABLE followed by the job's 4-character code
+    (shown in the prompt), so that a prompt left on screen cannot approve another job by accident.
+    DECLINE refuses the job for good; anything else leaves it waiting (`roaas ops retry` asks again)."""
+    name = "on-site"
+
+    def __init__(self, job_id: str, header: str = "", ask: Callable[[str], str] = input, show: Callable[[str], None] = print):
+        self.code = job_id[-4:].upper()
+        self.header, self._ask, self._show = header, ask, show
+
+    def request(self, program_text: str, host: str) -> bool:
+        from .model import Declined
+        self._show("\n  ======== JOB WAITING FOR APPROVAL ========\n" + self.header + "\n" + program_text)
+        ans = " ".join(self._ask(f"\n  Emergency stop within reach and work area clear?\n"
+                                 f"  Type  ENABLE {self.code}  to run,  DECLINE  to refuse it,  or Enter to leave it: ").split()).upper()
+        if ans == "DECLINE":
+            raise Declined("declined by the operator at the robot")
+        return ans == f"ENABLE {self.code}"
+
+
 class SimulatorOnly:
     name = "simulator-only"
 

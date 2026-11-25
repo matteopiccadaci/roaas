@@ -138,7 +138,7 @@ class RobotAdapter(Protocol):
 
 | Policy | Behaviour | When |
 |---|---|---|
-| `on-site` | Prints the program; the operator types `ENABLE` at the mini PC console. This is today's behaviour | Now (D5) |
+| `on-site` | Prints the job and its program; the operator types `ENABLE <job code>` at the mini PC console, or `DECLINE`, or leaves it waiting (D21) | Now (D5) |
 | `auto` | Approves when the cell's interlocks report OK and the workspace check passes; the camera hook is still a placeholder | Later, after the camera and a brief revision |
 | `never` | Dry run: validates and plans, never moves | Tests, demos |
 
@@ -458,7 +458,7 @@ a fallback (D10).
 | 3 ✅ | `roaas` core and `dobot_cr3a` adapter wrapping the kit: approval callback, recorder after approval, manifest 0.6, estimate, preview, two-level packaging; `fake` robot; manual path | pytest green against the fake controller; a v0.6 episode verifies; tampering is detected |
 | 4 ✅ | Offer and check generator; the two templates | Generated deliveries pass Crow's `check-delivery.ts`, and tampered ones fail |
 | 5 🟡 | Job API on Cloudflare, lab agent, end to end in Crow's local simulation ✅ (Released, 2026-11-25), then Sepolia with the hosted adapter | One deal Released on testnet |
-| 6 | Operator CLI (`queue`, `approve`, `decline`, `open`, `close`, `pause`) and emails | The operator can run a day of jobs from the CLI |
+| 6 ✅ | Operator CLI (`roaas ops status`, `queue`, `open`, `close`, `pause`, `resume`, `retry`, `decline`), per-job approval code, emails | The operator can run a day of jobs from the CLI |
 | 7 | Docs: provider setup (Windows, Linux), adding a robot, offer authoring, buyer guide for Crow | — |
 | 8 | One real testnet job on the CR3A, with the operator present | Released, and the buyer's offline verification passes |
 

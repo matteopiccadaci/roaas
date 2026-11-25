@@ -25,6 +25,7 @@ ROAAS_CLOUD_E2E=1 pytest tests/test_cloud_local.py      # the real Worker under 
 | `roaas offers build --fingerprint HEX [--out crow] [--rehearsal]` | Generates the Crow deal template, the seller adapter configuration and the offer catalogue (see `crow/README.md`) |
 | `roaas scope ORDER` | The Crow scope a buyer sends for an order |
 | `roaas agent --cloud URL --robot-info FILE [--host IP --live]` | The lab agent: one outbound WebSocket to the job API; validates quotes with the lab's rules, runs approved jobs, uploads results (`ROAAS_LAB_TOKEN` in the environment; needs `pip install -e ".[agent]"`) |
+| `roaas ops status\|queue\|open\|close\|pause\|resume\|retry JOB\|decline JOB --cloud URL` | The operator's commands (docs/OPERATOR.md) |
 | `roaas terms ORDER --template FILE` | The deal terms filled for that order, for Crow's `check-delivery.ts` |
 
 `--live` is required for any robot that is not on this machine. The operator then types `ENABLE`. Without

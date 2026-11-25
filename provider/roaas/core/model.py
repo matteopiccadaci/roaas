@@ -84,3 +84,7 @@ class NotReady(RuntimeError):
 
 class Cancelled(RuntimeError):
     """The operator declined: no motion command was sent."""
+
+
+class Declined(RuntimeError):
+    """The operator refused the job for good: nothing moved, and the job will not be run."""

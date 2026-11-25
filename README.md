@@ -20,6 +20,7 @@ plug in later as adapters, without changing the core.
 | `cloud/` | Job API on Cloudflare Workers (free plan): Worker and SQLite Durable Object, status page |
 | `crow/` | Generated Crow deal template, seller adapter config, offer catalogue |
 | `scripts/crow_sim_rehearsal.py` | A full deal on Crow's local simulator, with our Worker, the agent and the fake robot |
+| `docs/OPERATOR.md` | Operator guide: starting the agent, approving jobs, `roaas ops` commands |
 | `docs/ARCHITECTURE.md` | Proposed architecture: tiers, interfaces, schemas, checks, plan |
 | `docs/CROW_SELLER_REPORT.md` | How Crow's seller side works and what it means for this project |
 | `docs/decisions.md` | Decision log |

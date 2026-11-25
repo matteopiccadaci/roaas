@@ -105,3 +105,18 @@ def test_preview_rate_drops_to_fit_long_recordings():
     ts = [k * 8 for k in range(n)]
     p = choose_preview(q, qd, ts, 860_000)
     assert len(canonical(p)) <= 860_000 and p["rate_hz"] < 125 and p["t_ms"][-1] == ts[-1] - ts[0]
+
+
+def test_on_site_job_console_needs_the_job_code():
+    from roaas.core.approval import OnSiteJobConsole
+    from roaas.core.model import Declined
+
+    def console(answer):
+        return OnSiteJobConsole("job-0123456789abcdef0123abcd", ask=lambda _: answer, show=lambda _: None)
+    assert console("ENABLE ABCD").request("program", "192.168.5.1") is True
+    assert console("  enable   abcd ").request("program", "192.168.5.1") is True      # spacing and case tolerated
+    assert console("ENABLE").request("program", "192.168.5.1") is False               # code missing: not approved
+    assert console("ENABLE 0123").request("program", "192.168.5.1") is False          # another job's code
+    assert console("").request("program", "192.168.5.1") is False                     # left for later
+    with pytest.raises(Declined):
+        console("decline").request("program", "192.168.5.1")
