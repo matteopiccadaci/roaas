@@ -1,0 +1,17 @@
+{
+  "robot_model": "DOBOT CR3A",
+  "controller_firmware": "4.5.1.1",
+  "home_deg": [0, 0, 0, 0, 0, 0],
+  "max_speed_factor": 100,
+  "allowed_envelope_deg": [
+    [-20, 20],
+    [-30, 30],
+    [-45, 45],
+    [-90, 90],
+    [-90, 90],
+    [-180, 180]
+  ],
+  "motion": "MovJ (joint interpolation) home -> waypoints -> home, stop at every point",
+  "suggested_speed_factor": 30,
+  "note": "Any combination of joint values inside this envelope is allowed. The envelope and the speed limit may be widened later by the lab."
+}

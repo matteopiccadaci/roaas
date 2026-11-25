@@ -1,0 +1,71 @@
+# Decision log
+
+Newest last. "Open" items are waiting for a decision.
+
+## 2026-11-25
+
+**D1. Name: ROaaS.** "RaaS" was dropped: in security it usually means *Ransomware-as-a-Service*.
+"ROAAS" is also an aviation acronym (Runway Overrun Awareness and Alerting System). That is a different
+field, so the clash is acceptable. No trademark search was done.
+
+**D2. Testnet only.** Sepolia and Crow Test USDC. No institutional approval is needed for the testnet
+demo. Before any real-value use, the following must be cleared:
+- use of the lab's robot by the lab head or supervisor;
+- running jobs for outside parties, and unattended mode, with the university's safety office;
+- network use of the lab PC with IT;
+- commercial activity "conto terzi" (invoicing, VAT, receiving crypto as a public body);
+- compatibility with the PhD scholarship.
+
+**D3. Hosting.**
+- **Crow seller adapter:** hosted by Crow on Cloudflare (hosted sellers, Crow ADR-0037). This is assumed
+  while the confirmation from Crow is pending. Fallback 1: our own Cloudflare Worker using Crow's
+  `apps/hosted-sellers`. Fallback 2: the Node adapter behind a tunnel.
+- **Public job API and site:** Vercel. The Hobby plan is for non-commercial use only; real sales need Pro.
+- **Lab agent:** runs on the lab mini PC and makes outbound connections only. No open ports, no VPN, no
+  tunnel. It re-validates every job against its local limits and does not trust the cloud.
+
+**D4. Checks: deterministic only.** Template `checks-only`, no AI rubric. Adopt Crow's `signature_valid`
+check (ADR-0045, proposed 2026-11-25) as soon as the adjudicators run it.
+
+**D5. Approval policy.** It is configurable.
+- Now: `on-site`. The operator is notified by email and types `ENABLE` at the mini PC console.
+- Later: `auto`. According to the lab, the cell's physical safety measures are already in place; only the
+  camera is missing. Switching to `auto` also requires revising the project brief, which today calls
+  operator approval non-negotiable.
+
+**D6. Keys (testnet).** One new secp256k1 key, used only for this project. It is stored as a secret of the
+service that hosts the adapter, with an encrypted backup protected by a passphrase. Payout goes to the
+same address for now.
+
+**Required before any real-value deployment:**
+- the hot signing key is kept separate from the payout address (`payoutAddress`), which lives on a
+  hardware wallet;
+- a separate signer (`CROW_SIGNER_URL`) where possible;
+- a fresh key, never reused from testnet;
+- a written plan for key rotation and for a compromised key.
+
+**D7. Privacy of the delivery.**
+- `recorder.target_host` and `recorder.host_os` are removed.
+- `serial_hmac_sha256` is kept, which requires `DOBOT_SERIAL_SALT` on the lab PC.
+- The buyer's nonce and waypoints become public in the deal terms. This is acceptable: it reveals what was
+  ordered and creates no security risk.
+
+**D8. The deal is bound into the signed manifest.** The manifest carries `commitmentId` and the buyer's
+address (manifest schema `dobot-episode/0.6`). The verifier stays backwards compatible.
+
+**D9. Online gating.** The lab agent sends a heartbeat with the robot's status. Quotes are refused when:
+- the last heartbeat is older than 30 s;
+- the robot is not ready (an alarm is active, or it is not in TCP mode);
+- (on-site phase) the operator is off duty.
+
+**D10. Manual path kept.** Orders by email or Telegram still work. `run_order.py` keeps working as a
+fallback, and manual orders can enter the same queue (`--manual`) so that the robot runs one job at a time.
+
+**D11. Offers.** Two very simple templates. Prices and deadlines are placeholders.
+`max_speed_factor` stays at 100; lowering it for unknown buyers is a possible future change.
+
+**D12. Notifications** to the operator by email.
+
+**D13. Language.** Code and docs in English.
+
+**Open: recording duration versus Crow's 1 MiB delivery limit.** See `CROW_SELLER_REPORT.md`, section 8.

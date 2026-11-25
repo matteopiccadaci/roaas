@@ -1,0 +1,69 @@
+{
+  "model": "DOBOT CR3A",
+  "serial_number": "FILL-IN-FROM-LABEL",
+  "controller_serial_number": "FILL-IN-FROM-CONTROLLER-LABEL",
+  "controller_firmware": "4.5.1.1-stable-6da016759-202405142233",
+  "calibration_date": "TO-ASK-THE-LAB",
+  "home_deg": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "max_speed_factor": 100,
+  "allowed_envelope_deg": [
+    [
+      -20,
+      20
+    ],
+    [
+      -30,
+      30
+    ],
+    [
+      -45,
+      45
+    ],
+    [
+      -90,
+      90
+    ],
+    [
+      -90,
+      90
+    ],
+    [
+      -180,
+      180
+    ]
+  ],
+  "measured_single_joint_ranges_deg": {
+    "J1": [
+      -360,
+      360
+    ],
+    "J2": [
+      -100,
+      90
+    ],
+    "J3": [
+      -150,
+      150
+    ],
+    "J4": [
+      -135,
+      135
+    ],
+    "J5": [
+      -360,
+      360
+    ],
+    "J6": [
+      -360,
+      360
+    ]
+  },
+  "note": "Envelope = conservative core where ANY combination of joint values was judged safe in this cell (arm near upright; J1 limited to the range that stays clear even with J2 at +/-90). Single-joint ranges were measured by hand from the home pose; combinations near the edges are NOT all safe. Copy this file to robot_info_cr3a.json on the lab PC and fill in the serials; robot_info_cr3a.json is git-ignored."
+}

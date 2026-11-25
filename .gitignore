@@ -1,0 +1,25 @@
+# Secrets and private lab data: never commit
+keys/
+secrets/
+.env
+.env.*
+!.env.example
+*.keystore
+keystore*/
+robot_info_cr3a.json
+
+# Recordings and deliveries (raw.bin and episodes stay in the lab)
+episodes/
+deliveries/
+raw.bin
+
+# Tooling
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+.vercel/
+.wrangler/
+.DS_Store

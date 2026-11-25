@@ -1,0 +1,12 @@
+{
+  "order_id": "buyer-demo-0001",
+  "nonce": "3f9a6c1e8b2d47f0a5c9e1b7d3f20864",
+  "issued_at_utc": "2026-11-18T10:00:00Z",
+  "speed_factor": 30,
+  "waypoints": [
+    [12.5, -15.0, 25.0, 30.0, -40.0, 45.0],
+    [-10.0, 18.0, -20.0, -50.0, 35.0, -90.0],
+    [5.0, -22.0, 38.0, 70.0, 20.0, 120.0]
+  ],
+  "notes": "Example order: three waypoints, all joints moving."
+}
