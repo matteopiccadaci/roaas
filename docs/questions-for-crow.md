@@ -1,0 +1,108 @@
+# Questions for Crow (Rafael)
+
+Open questions for the Crow team. When an answer arrives, fill in **Answer** and **Date**, set **Status**
+to `answered`, and note in `decisions.md` any decision it changes.
+
+Status values: `open`, `asked`, `answered`, `dropped`.
+
+---
+
+## Q1. Hosting the ROaaS seller adapter
+
+- **Question:** Can Crow host the ROaaS seller adapter as a hosted seller (ADR-0037)?
+  - Which slug should we use, for example `crow.direct/agents/roaas`?
+  - What configuration do you need from us (deal template, terms rules, job API URLs, payout address)?
+  - Can the selling key stay with us through `CROW_SIGNER_URL`, or must it be a Worker secret in your
+    account?
+- **Why:** The whole deployment plan assumes this (decision D3). The fallback is our own Cloudflare Worker.
+- **Status:** open
+- **Answer:**
+- **Date:**
+
+## Q2. When will `signature_valid` be built?
+
+- **Question:** ADR-0045 (proposed 2026-11-25) uses our kit's manifest as its worked example. When will
+  the adjudicators run this check?
+- **Why:** With it, the ECDSA signature is verified before payment, not only by the buyer afterwards. We
+  will shape our delivery for it from the start.
+- **Status:** open
+- **Answer:**
+- **Date:**
+
+## Q3. Delivery size above 1 MiB
+
+- **Question:** Can `limits.maxCiphertextBytes` be raised for us, or will deliveries with several files or
+  large attachments be supported?
+  - Our plan in the meantime: a delivery of at most 1 MiB that holds the signed manifest, a summary and a
+    downsampled preview, plus a link, a decryption key and a hash for the full 125 Hz telemetry stored by us.
+  - Is that pattern acceptable to Crow?
+- **Why:** Telemetry is about 16.5 KB/s (gzip + base64), so 1 MiB holds only about 60 s at full rate
+  (decision D14).
+- **Status:** open
+- **Answer:**
+- **Date:**
+
+## Q4. Passing the refusal reason through at quote time
+
+- **Question:** When our job API refuses a quote (for example a joint outside the envelope, or the robot
+  offline), can the adapter pass a short reason to the buyer instead of only the status code?
+- **Why:** Today the buyer agent cannot tell what to fix. The workaround is a public `validate` endpoint.
+- **Status:** open
+- **Answer:**
+- **Date:**
+
+## Q5. Scope types for waypoints
+
+- **Question:** Adapter `scope` fields accept only `string`, `strings` and `integer`. Will lists of numbers
+  (or decimals) be supported? If not, which encoding do you recommend for a list of 6-joint waypoints in
+  degrees: a canonical JSON string, or integers in millidegrees?
+- **Why:** It decides the buyer-facing task format and the pattern rules.
+- **Status:** open
+- **Answer:**
+- **Date:**
+
+## Q6. Allowed media types
+
+- **Question:** Which delivery media types are allowed? Is `application/json` the right choice for one
+  episode document?
+- **Why:** Problem type `mime_not_allowed`; the allow-list is not documented.
+- **Status:** open
+- **Answer:**
+- **Date:**
+
+## Q7. What the adjudicators keep
+
+- **Question:** How long do the adjudicators, and the operators' ciphertext store, keep a delivery? Who can
+  read it later?
+- **Why:** It decides what we may put in a delivery (privacy, decision D7).
+- **Status:** open
+- **Answer:**
+- **Date:**
+
+## Q8. Seller-side cancellation after funding
+
+- **Question:** If the robot breaks after a deal is funded, can the seller cancel with a full refund to the
+  buyer, fee included, without the buyer's co-signature? Today we can only sign a refund and wait, or let
+  `deliverBy` pass.
+- **Why:** It decides the operator's "reject" action and the deadlines we quote.
+- **Status:** open
+- **Answer:**
+- **Date:**
+
+## Q9. Discovery
+
+- **Question:** How do buyer agents find hosted sellers? Is there a listing, or only the card page? Is
+  `card.schema.json` stable?
+- **Why:** Offer templates must be published where agents look.
+- **Status:** open
+- **Answer:**
+- **Date:**
+
+## Q10. From testnet to real use (later)
+
+- **Question:** What would a real-value setup require: club membership, mandates, adjudicators, contract
+  audit status?
+- **Why:** For planning only. ROaaS stays on testnet until the lab decides otherwise (decision D2).
+- **Status:** open
+- **Answer:**
+- **Date:**

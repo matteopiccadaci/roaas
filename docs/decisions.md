@@ -10,6 +10,7 @@ field, so the clash is acceptable. No trademark search was done.
 
 **D2. Testnet only.** Sepolia and Crow Test USDC. No institutional approval is needed for the testnet
 demo. Before any real-value use, the following must be cleared:
+
 - use of the lab's robot by the lab head or supervisor;
 - running jobs for outside parties, and unattended mode, with the university's safety office;
 - network use of the lab PC with IT;
@@ -17,6 +18,7 @@ demo. Before any real-value use, the following must be cleared:
 - compatibility with the PhD scholarship.
 
 **D3. Hosting.**
+
 - **Crow seller adapter:** hosted by Crow on Cloudflare (hosted sellers, Crow ADR-0037). This is assumed
   while the confirmation from Crow is pending. Fallback 1: our own Cloudflare Worker using Crow's
   `apps/hosted-sellers`. Fallback 2: the Node adapter behind a tunnel.
@@ -28,6 +30,7 @@ demo. Before any real-value use, the following must be cleared:
 check (ADR-0045, proposed 2026-11-25) as soon as the adjudicators run it.
 
 **D5. Approval policy.** It is configurable.
+
 - Now: `on-site`. The operator is notified by email and types `ENABLE` at the mini PC console.
 - Later: `auto`. According to the lab, the cell's physical safety measures are already in place; only the
   camera is missing. Switching to `auto` also requires revising the project brief, which today calls
@@ -38,6 +41,7 @@ service that hosts the adapter, with an encrypted backup protected by a passphra
 same address for now.
 
 **Required before any real-value deployment:**
+
 - the hot signing key is kept separate from the payout address (`payoutAddress`), which lives on a
   hardware wallet;
 - a separate signer (`CROW_SIGNER_URL`) where possible;
@@ -45,6 +49,7 @@ same address for now.
 - a written plan for key rotation and for a compromised key.
 
 **D7. Privacy of the delivery.**
+
 - `recorder.target_host` and `recorder.host_os` are removed.
 - `serial_hmac_sha256` is kept, which requires `DOBOT_SERIAL_SALT` on the lab PC.
 - The buyer's nonce and waypoints become public in the deal terms. This is acceptable: it reveals what was
@@ -54,6 +59,7 @@ same address for now.
 address (manifest schema `dobot-episode/0.6`). The verifier stays backwards compatible.
 
 **D9. Online gating.** The lab agent sends a heartbeat with the robot's status. Quotes are refused when:
+
 - the last heartbeat is older than 30 s;
 - the robot is not ready (an alarm is active, or it is not in TCP mode);
 - (on-site phase) the operator is off duty.
@@ -68,4 +74,19 @@ fallback, and manual orders can enter the same queue (`--manual`) so that the ro
 
 **D13. Language.** Code and docs in English.
 
-**Open: recording duration versus Crow's 1 MiB delivery limit.** See `CROW_SELLER_REPORT.md`, section 8.
+**D14. Two-level delivery (option A)** removes the about-60-s limit set by Crow's 1 MiB cap.
+
+- **The Crow delivery (at most 1 MiB)** holds:
+  - the signed manifest and a summary (status, arrivals at each waypoint, violations);
+  - a telemetry preview, downsampled just enough to fit (125 Hz up to about 60 s, then lower rates);
+  - a link, a random decryption key and the SHA-256 of the full 125 Hz telemetry.
+- **The full telemetry** is stored encrypted by us (Vercel Blob). The buyer gets the key only when the deal
+  is released, and the hash is already in the signed manifest.
+- **The trade-off:** the availability of the full file depends on us and is not held in escrow, so we
+  commit to keeping it for N days (placeholder).
+- **Follow-ups:**
+  - a more compact encoding (option B) is a later optimisation;
+  - a larger limit is asked of Crow (`questions-for-crow.md`, Q3);
+  - the kit's fixed 90 s motion timeout becomes derived from the estimated duration.
+
+Open questions for Crow are tracked in `questions-for-crow.md`.

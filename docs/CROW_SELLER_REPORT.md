@@ -1,6 +1,7 @@
 # How Crow's seller side works (deliverable 1)
 
 Written 2026-11-25. Sources:
+
 - the public documentation at https://crow.direct (`llms.txt`, `setup.txt`, `sell.txt`, `reference.txt`, `/problems/`);
 - the Crow repository https://github.com/rafaeldavid/crow at commit `1e6d0bc` (2026-11-25), read only. Nothing
   was installed or run, and no Crow API was called.
@@ -10,6 +11,7 @@ Items marked *(unverified)* come from summaries, not from the source text.
 ## 1. Verdict
 
 The brief's understanding is right. We do **not** build a platform: we are a **seller**. Crow provides:
+
 - the operators (they relay messages and pay the gas);
 - the escrow contract on Sepolia;
 - the adjudicators (they run the checks);
@@ -41,6 +43,7 @@ adjudicators run the checks: pass → Released (seller paid, buyer gets the key)
 | `judgeBy`, `fallbackBy` | after `deliverBy` | adjudicators' windows |
 
 When a deadline is missed:
+
 - **No delivery by `deliverBy`:** the buyer reclaims price **and** fee; the seller gets nothing.
 - **A required check fails:** the price is refunded, but the adjudication fee is not.
 - **After funding:** there is no unilateral seller decline. The seller can sign a full refund, which the
@@ -51,6 +54,7 @@ Phase one has no appeal: the first decision is final.
 ## 3. The seller adapter
 
 **What it does:**
+
 1. Validates the buyer's `scope` against declared rules.
 2. Asks our API for a price.
 3. Applies terms rules: per-scope windows, extra checks, refusals.
@@ -65,12 +69,14 @@ Phase one has no appeal: the first decision is final.
 It keeps a **journal**, so after a restart it neither starts nor delivers twice.
 
 **Configuration:** one JSON file, no source edits. Only `sellerApi` is required. Useful fields:
+
 - `quoteAuth` (bearer credentials per buyer);
 - `quoteRateLimit`;
 - `payoutAddress` (keep it apart from the signing key in production);
 - `termsRules` (`refuse` text, `timing`, `checks`).
 
 **Where it runs:**
+
 - as a Node process with a journal file (`examples/seller-adapter.ts`), which needs a public HTTPS name for
   `/quote`;
 - or as a **hosted seller**: Crow runs the same core (`seller-adapter-core.ts`) on its Cloudflare account, as
@@ -90,6 +96,7 @@ GET  <result> (jobId in the path)               → 202 running | 200 result byt
 `amount` is in base units, as a decimal string.
 
 **Two constraints found in the code:**
+
 - **`scope` fields can only be `string` (with a pattern), `strings` (distinct strings) or `integer`
   (min/max).** There are no arrays of numbers and no decimals. A list of waypoints therefore has to travel as
   an encoded string (for example the canonical order JSON, or `"12.5,-15,25,30,-40,45;…"`), validated by a
@@ -135,6 +142,7 @@ Limits: 1 to 10 checks per deal, at least one required; patterns are full matche
 characters; there is no numeric range check for CSV (ranges are written as regexes).
 
 **Relevant work already in the Crow repository:**
+
 - **`examples/robot-episode.ts`.** A synthetic `dobot_cr3a` episode at 125 Hz, delivered as **one JSON
   document** (LeRobot v3 layout plus a provenance block), with ten checks:
   - format and metadata constants;
