@@ -106,3 +106,16 @@ Status values: `open`, `asked`, `answered`, `dropped`.
 - **Status:** open
 - **Answer:**
 - **Date:**
+
+## Q11. Checks that depend on the deal
+
+- **Question:** A hosted seller's deal checks come from a static template, plus `termsRules` and `{{scope}}`
+  placeholders. A placeholder can insert a scope value as a whole value or as text, but it cannot compute
+  anything with it (for example "waypoint ± 1°"). Could the seller API's `quote` answer return extra checks
+  for that one deal? Or could placeholders accept numeric lists?
+- **Why:** Today a check can pin the buyer's exact order text (`const "{{order}}"`), but it cannot check each
+  arrival against its own waypoint. That check stays seller-declared (covered by the signature) and is
+  verified by the buyer offline.
+- **Status:** open
+- **Answer:**
+- **Date:**

@@ -97,4 +97,18 @@ fallback, and manual orders can enter the same queue (`--manual`) so that the ro
   Wi-Fi.
 - The first real recording over the cable has no resyncs and no gaps (`CROW_SELLER_REPORT.md`, section 8).
 
+**D16. The robot must start disabled.** The lab agent starts a job only when:
+- the dashboard answers, which means TCP mode is on and DobotStudio Pro is not holding the robot in online
+  mode;
+- `RobotMode` is 4, "disabled";
+- there are no alarms.
+
+Otherwise the robot is reported as not ready, and quotes are refused. Context: in the first real recording the
+arm was already enabled (mode 5) before the operator confirmed.
+
+**D17. Robot metadata.**
+- Fill in the real factory `calibration_date` in the private `robot_info_cr3a.json` on the mini PC.
+- If DobotStudio Pro allows it, set the controller clock, which is about 7 h off.
+- Neither blocks the work: absolute time comes from the PC's NTP clock.
+
 Open questions for Crow are tracked in `questions-for-crow.md`.

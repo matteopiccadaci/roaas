@@ -16,6 +16,7 @@ plug in later as adapters, without changing the core.
 | --- | --- |
 | `kits/dobot_kit/` | The existing lab kit, v0.4.5, unchanged (the robot's private `robot_info_cr3a.json` is replaced by `robot_info_cr3a.example.json`) |
 | `kits/dobot_kit_client/` | The buyer edition of the same kit, v0.4.5 |
+| `docs/ARCHITECTURE.md` | Proposed architecture: tiers, interfaces, schemas, checks, plan |
 | `docs/CROW_SELLER_REPORT.md` | How Crow's seller side works and what it means for this project |
 | `docs/decisions.md` | Decision log |
 | `docs/questions-for-crow.md` | Open questions for the Crow team, with their answers |
