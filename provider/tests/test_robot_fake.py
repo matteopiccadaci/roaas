@@ -49,7 +49,11 @@ def test_episode_is_valid_and_v06(recorded):
     assert all(r.ok for r in results), [r.line() for r in results if not r.ok]
     m = json.loads((ep.path / "manifest.json").read_text())
     assert m["schema"] == "dobot-episode/0.6"
-    assert set(m["recorder"]) == {"version"}                        # no target_host, host_os, python (D7)
+    assert set(m["recorder"]) == {"version", "simulator"}           # no target_host, host_os, python (D7)
+    assert m["recorder"]["simulator"] is True                       # the fake controller runs on this machine
+    pv = m["preview"]
+    assert pv["rate_hz"] == 125 and all(isinstance(x, int) for x in pv["q1_mdeg"])
+    assert all(a["sample"] in pv["source_samples"] for a in m["summary"]["arrivals"])   # arrivals kept
     assert m["deal"]["commitment_id"] == DEAL.commitment_id         # bound into the signature (D8)
     assert m["summary"]["all_ok"] and len(m["summary"]["arrivals"]) == 4
     assert max(a["max_error_deg"] for a in m["summary"]["arrivals"]) < 0.1
@@ -114,12 +118,11 @@ def _tampered(doc_bytes, mutate):
 
 
 @pytest.mark.parametrize("name, mutate, failing", [
-    ("preview value", lambda d: d["preview"]["q1"].__setitem__(3, 0.5), "preview-hash"),
+    ("preview value", lambda d: d["manifest"]["preview"]["q1_mdeg"].__setitem__(3, 500), "manifest-equals-signed-text"),
     ("shown manifest", lambda d: d["manifest"]["summary"].__setitem__("all_ok", True) or
         d["manifest"]["stats"].__setitem__("samples", 1), "manifest-equals-signed-text"),
     ("signed text", lambda d: d.__setitem__("manifest_text", d["manifest_text"].replace('"completed"', '"complete!"', 1)), "signature"),
     ("order", lambda d: d.__setitem__("order_text", d["order_text"].replace("100", "99", 1)), "order-hash"),
-    ("preview out of envelope", lambda d: d["preview"]["q1"].__setitem__(0, 40.0), "preview-bounds"),
 ])
 def test_tampering_is_detected(recorded, name, mutate, failing):
     _, ep = recorded
@@ -143,7 +146,7 @@ def test_manual_zip_keeps_kit_layout(recorded, tmp_path):
     _, ep = recorded
     z = package_zip(ep.path, tmp_path)
     names = {n.split("/", 1)[1] for n in zipfile.ZipFile(z).namelist()}
-    assert names == {"manifest.json", "manifest.sig", "telemetry.csv.gz", "pubkey.pem", "order.json", "preview.json"}
+    assert names == {"manifest.json", "manifest.sig", "telemetry.csv.gz", "pubkey.pem", "order.json"}
 
 
 def test_enabled_robot_is_not_ready(fresh_fake_robot, robot_info, signer, tmp_path):
@@ -212,3 +215,35 @@ def test_cli_manual_run_and_verify_delivery(fresh_fake_robot, tmp_path):
                         str(tmp_path / "order.json"), "--fingerprint", fp, "--telemetry", str(enc)],
                        cwd=tmp_path, env=env, capture_output=True, text=True)
     assert r.returncode == 0 and "RESULT: delivery VALID" in r.stdout, r.stdout + r.stderr
+
+
+def test_preview_checks_catch_bad_series(recorded):
+    _, ep = recorded
+    m = json.loads((ep.path / "manifest.json").read_text())
+    pv = json.loads(json.dumps(m["preview"]))
+    pv["q1_mdeg"][0] = 40_000                                  # J1 envelope is [-20, 20] deg
+    assert {r.id: r.ok for r in CR3A.verify_preview(pv, m)}["preview-bounds"] is False
+    pv = json.loads(json.dumps(m["preview"]))
+    pv["t_ms"][2] = pv["t_ms"][1]                              # time must strictly increase
+    assert {r.id: r.ok for r in CR3A.verify_preview(pv, m)}["preview-time"] is False
+    pv = json.loads(json.dumps(m["preview"]))
+    pv["qd3_mdeg_s"].pop()
+    assert {r.id: r.ok for r in CR3A.verify_preview(pv, m)}["preview-equal-lengths"] is False
+
+
+@pytest.mark.skipif(not __import__("os").environ.get("CROW_REPO"), reason="set CROW_REPO to a built clone of Crow")
+def test_crow_adjudicator_code_accepts_rehearsal_and_rejects_simulator_in_production(recorded, tmp_path):
+    """Crow's own check-delivery.ts (the adjudicator's first stage), offline, on our delivery and our terms."""
+    import os
+    from roaas.settlement import crow_terms as ct
+    task, ep = recorded
+    doc, _ = build_delivery(ep.path, telemetry_url="https://roaas-placeholder.vercel.app/t/x.enc")
+    (tmp_path / "delivery.json").write_bytes(doc)
+    fp = json.loads(doc)["manifest"]["signer"]["pubkey_sha256"]
+    scope = ct.scope_for_order(task.raw)
+    for name, rehearsal, expected in (("rehearsal", True, 0), ("production", False, 1)):
+        (tmp_path / f"{name}.json").write_text(json.dumps(ct.terms_for(ct.template(CR3A, fp, rehearsal=rehearsal), scope)))
+        r = subprocess.run(["node", "examples/check-delivery.ts", str(tmp_path / f"{name}.json"),
+                            str(tmp_path / "delivery.json")], cwd=os.environ["CROW_REPO"], capture_output=True, text=True)
+        assert r.returncode == expected, r.stdout + r.stderr
+    assert "FAIL  run (required): schema: /manifest: /recorder: /simulator" in r.stdout

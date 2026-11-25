@@ -258,92 +258,99 @@ text:
 
 ### 4.3 Manifest `dobot-episode/0.6` (signed)
 
-The manifest keeps today's canonical-JSON signing. Changes from 0.5:
+The manifest keeps today's canonical-JSON signing. Changes from 0.5 (implemented in phase 3, revised in
+phase 4):
 
 - **Removed:** `recorder.target_host`, `recorder.host_os`, `recorder.python` (D7).
+- **Added `recorder.simulator`:** `true` when the robot was on the lab PC itself, i.e. the fake controller.
+  It replaces `target_host` in Crow's "not a simulator" check (Q12).
 - **Added `deal`:** `{settlement: "crow" | "manual", commitment_id, buyer, job_id}` (D8).
-- **Added `task`:** `{schema, robot, task}`. The `order` section is unchanged (`order_sha256`, nonce,
-  waypoints, speed).
+- **Added `task`:** `{robot, task, legacy_order, params}`. The `order` section is unchanged (`order_sha256`,
+  nonce, waypoints, speed).
+- **Added `program.targets_deg`:** every target in order, the homes included.
 - **Added `summary`,** computed from the data **before** signing:
-  - `status`;
-  - `arrivals`: `[{point, target_deg, sample, max_error_deg}]`;
+  - `status`, `all_ok`;
+  - `arrivals`: `[{point, target_deg, reached, sample, t_ms, max_error_deg}]`;
   - `spec_violations`, `continuity_violations`;
-  - `repetitions`, for the repeatability task.
-- **Added `preview`:** `{rate_hz, columns, sha256}`, where `sha256` is the hash of the canonical preview
-  JSON, so that the signature covers the preview as well.
-- **Unchanged:** `files["telemetry.csv.gz"]` (the hash of the full telemetry) and `raw_recording` (raw.bin
-  stays in the lab).
+  - `checks`.
+- **Added `preview`: the checkable preview, inside the signed manifest.** It holds integer series, one per
+  axis: `t_ms`, `q1_mdeg…q6_mdeg`, `qd1_mdeg_s…qd6_mdeg_s`.
+  - It contains every `step`-th sample, plus every arrival sample and the last one. `source_samples` lists
+    the indices in the full telemetry.
+  - Crow's series checks read only integers. Its `signature_valid` check with `jsonEquals: /manifest` ties
+    exactly the object those checks read to the lab's key. A hash would not tie them: per Crow's docs, no
+    check kind hashes a field.
+  - The rate is the highest of 125, 62.5, 25, ~10.4 and 5 Hz that fits a 440 KB budget. The preview
+    travels twice, as signed text and as the object.
+- **Unchanged:** `files["telemetry.csv.gz"]` (the hash of the full telemetry), `raw_recording` (raw.bin stays
+  in the lab), `stats`, `program`.
 
-`verify_episode.py` stays able to read 0.5.
+`verify_episode.py` from the kit still accepts 0.6 episodes. With a new-format order it can check `--nonce`
+only. Our verifier also recomputes the preview from the full telemetry (`preview-matches-telemetry`).
 
 ### 4.4 Delivery document `roaas-episode/1`
 
-The delivery is `application/json`, at most 1 MiB. Its shape already fits the proposed `signature_valid`
-check (ADR-0045):
+The delivery is `application/json`, at most 1 MB:
 
 ```json
 {
   "format": "roaas-episode/1",
-  "manifest": { "...": "object, equal to manifest_text parsed" },
+  "manifest": { "...": "object, equal to manifest_text parsed; holds summary and preview" },
   "manifest_text": "<the exact signed bytes, canonical JSON>",
   "manifest_sig": "<base64 DER ECDSA P-256 signature>",
   "pubkey_spki_b64": "<base64 DER SubjectPublicKeyInfo>",
   "order_text": "<the exact order string the buyer sent>",
-  "preview": {
-    "rate_hz": 25,
-    "t_ms": [0, 40, 80],
-    "q1": [], "q2": [], "q3": [], "q4": [], "q5": [], "q6": [],
-    "qd1": [], "qd2": [], "qd3": [], "qd4": [], "qd5": [], "qd6": []
-  },
   "full_telemetry": {
     "url": "https://<blob store>/<id>",
-    "cipher": "aes-256-gcm",
+    "cipher": "aes-256-gcm:iv12|ciphertext|tag16",
     "key": "<base64, 32 bytes>",
     "ciphertext_sha256": "<hex>",
-    "bytes": 0,
-    "available_until": "<ISO 8601>"
+    "bytes": 123456,
+    "plaintext": "telemetry.csv.gz",
+    "available_until": "<YYYY-MM-DD, today + 30 days by default>"
   }
 }
 ```
 
-- **The preview is column-major, one array per joint,** so that each joint gets its own bounds. The JSON
-  Schema subset has no `prefixItems`.
-- **The preview rate is the highest of 125, 50, 25 or 10 Hz** that keeps the document under 900 KB.
-  Measured on the real CR3A: at 125 Hz the preview holds about 1.6 min, at 25 Hz about 8 min. The quote
-  refuses tasks longer than the maximum job duration (placeholder 10 min).
 - **The full telemetry** is the kit's own `telemetry.csv.gz` (its hash is in the manifest), encrypted with a
-  fresh key and stored in Blob. The key reaches the buyer only inside the Crow delivery, that is only when
-  the deal is released (D14).
+  fresh key and stored by us. The key reaches the buyer only inside the Crow delivery, that is only when the
+  deal is released (D14).
+- **The buyer can rebuild** the kit-style episode folder from the document and the decrypted telemetry
+  (`reconstruct_episode_dir`), and run `roaas verify-delivery` or the kit's `verify_episode.py`.
 
-### 4.5 Crow checks (`checks-only`, at most 10)
+### 4.5 Crow checks (`checks-only`, 11 of the 20 allowed)
+
+The checks are generated by `roaas offers build` (`crow/template.json`). They were tested on 2026-11-25 with
+Crow's own `check-delivery.ts` (the adjudicator's first stage, at commit `423ffcd`) and `check-terms.ts`.
 
 | # | Id | Kind | What it requires |
 |---|---|---|---|
-| 1 | `format` | `json_schema` | Required top-level fields, `format` const, no extra fields |
-| 2 | `order` | `json_schema` | `order_text` const `"{{order}}"`: exactly the buyer's order |
-| 3 | `status` | `json_schema` | `manifest.status` = `completed`; spec and continuity violations = 0 |
-| 4 | `signer-key` | `json_schema` | `manifest.signer.pubkey_sha256` const = the pinned fingerprint; `manifest_sig` and `pubkey_spki_b64` patterns |
-| 5 | `arrivals` | `json_schema` | Every `max_error_deg` ≤ 1; at least 3 points (home, ≥ 1 waypoint, home) |
-| 6 | `envelope` | `json_schema` | Every value of `preview.q1…q6` inside the lab envelope ± 1° (integer bounds per joint) |
-| 7 | `speeds` | `json_schema` | Every value of `preview.qd1…qd6` within the datasheet limits |
-| 8 | `full-telemetry` | `json_schema` | URL on our Blob domain; key and hash patterns |
-| 9 | `repetitions` | `json_schema` | Added by a terms rule when `task` = `repeatability` |
-| 10 | `hidden` | `hidden_characters_max` | Total 0 |
+| 1 | `format` | `json_schema` | Exact top-level fields (no others); the format constant; patterns for the signature, the key and the `full_telemetry` link (https), key and hash |
+| 2 | `order-text` | `json_schema` | `order_text` const `"{{orderText}}"`: exactly the buyer's order |
+| 3 | `manifest-signature` | `signature_valid` | ECDSA P-256 over `/manifest_text`, key `/pubkey_spki_b64` pinned by its fingerprint, `jsonEquals: /manifest` |
+| 4 | `order` | `json_schema` | Signed `order.nonce` = `{{nonce}}`, `order.order_sha256` = `{{orderSha256}}`, `task.robot` and `task.task` = `{{task}}` |
+| 5 | `run` | `json_schema` | Signed schema 0.6; status completed; not record-only; `recorder.simulator` = false (true for rehearsal terms); signer fingerprint; `summary.all_ok`; no datasheet or continuity violation |
+| 6 | `arrivals` | `json_schema` | Every program target reached, error ≤ 1° |
+| 7 | `samples` | `json_schema` | Full recording between 1 s and the maximum duration at 125 Hz |
+| 8 | `preview-bounds` | `json_schema` | Every previewed position inside the envelope ± 1° and every speed within the datasheet, **per joint**, in integer units |
+| 9 | `preview-lengths` | `equal_lengths` | The 13 series have the same length |
+| 10 | `preview-time` | `monotonic_column` | Time strictly increasing; no gap over 500 ms |
+| 11 | `hidden` | `hidden_characters_max` | Total 0 |
 
-When Crow ships `signature_valid`, check 4 becomes:
-`{alg: ecdsa-p256-sha256, publicKey: {pointer: /pubkey_spki_b64, format: spki-base64, spkiSha256: <pinned>}, message: {pointer: /manifest_text, jsonEquals: /manifest}, signature: {pointer: /manifest_sig, format: der}}`.
-
-The key travels as base64 SPKI rather than PEM, so the document contains no newline anywhere: the `hidden`
-check cannot trip on it.
+Measured with Crow's code:
+- **Rehearsal terms:** a fake-robot delivery is accepted, with all 11 checks passing.
+- **Production terms:** the same delivery is rejected on `run` (`recorder.simulator`).
+- **Tampering:** a changed preview value, an edited signed text, another order, another key, a non-https
+  link, an extra field and terms for another nonce are each rejected, by the right check.
 
 **What the checks prove, and what they do not:**
 
-| Proven before payment | Proven only by the buyer, offline, after release |
+| Proven before payment (by Crow's adjudicators) | Proven only by the buyer, offline, after release |
 |---|---|
-| The delivery is about exactly this order (`order_text`) | That `arrivals` really match the order's waypoints (Q11) |
-| Every previewed position is inside the envelope; every previewed speed is within the limits | That the preview is a faithful subsample (its hash is in the manifest) |
-| The self-reported status, violations and arrival errors are acceptable | That the full telemetry matches its hash |
-| The pinned key is named (today); the key really signed it (with `signature_valid`) | The full `verify_episode.py` run |
+| The lab's pinned key signed the manifest, and the manifest shown is the signed one | That the signed data are true (a key holder could sign made-up data) |
+| The delivery is about exactly this order (text, nonce, hash) | That each arrival's target is the order's waypoint (needs `passes_through` with per-deal waypoints: Q11) |
+| Not a simulator run; completed; every target reached within 1°; no violations (self-declared, signed) | That the preview is a faithful subsample (`preview-matches-telemetry`) |
+| The signed preview stays in the envelope and the speed limits, per joint, with ordered time and no long gap | That the full telemetry matches its signed hash, plus every check of the kit's verifier |
 
 ### 4.6 Job states
 
@@ -450,8 +457,8 @@ a fallback (D10).
 
 | Phase | Work | Done when |
 |---|---|---|
-| 3 | `roaas` core and `dobot_cr3a` adapter wrapping the kit: approval callback, recorder after approval, manifest 0.6, estimate, preview, two-level packaging; `fake` robot; manual path | pytest green against the fake controller; a v0.6 episode verifies; tampering is detected |
-| 4 | Offer and check generator; the two templates | Generated deliveries pass Crow's `check-delivery.ts`, and tampered ones fail |
+| 3 ✅ | `roaas` core and `dobot_cr3a` adapter wrapping the kit: approval callback, recorder after approval, manifest 0.6, estimate, preview, two-level packaging; `fake` robot; manual path | pytest green against the fake controller; a v0.6 episode verifies; tampering is detected |
+| 4 ✅ | Offer and check generator; the two templates | Generated deliveries pass Crow's `check-delivery.ts`, and tampered ones fail |
 | 5 | Job API on Vercel, lab agent, end to end in Crow's local simulation, then Sepolia with the hosted adapter and the fake robot | One deal Released and one Refunded on testnet |
 | 6 | Operator CLI (`queue`, `approve`, `decline`, `open`, `close`, `pause`) and emails | The operator can run a day of jobs from the CLI |
 | 7 | Docs: provider setup (Windows, Linux), adding a robot, offer authoring, buyer guide for Crow | — |

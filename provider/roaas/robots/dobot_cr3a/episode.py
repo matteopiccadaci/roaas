@@ -4,7 +4,8 @@ Differences from the kit, all from docs/ARCHITECTURE.md and docs/decisions.md:
   - preflight before anything moves: no alarms, dashboard reachable (TCP mode), robot DISABLED (D16);
   - approval through a policy object instead of input(); the recorder starts only AFTER approval;
   - manifest schema dobot-episode/0.6: no target_host / host_os / python (D7); adds `deal` (D8), `task`,
-    `program.targets_deg`, a signed `summary` and the hash of the preview (D14);
+    `program.targets_deg`, a signed `summary`, `recorder.simulator`, and the preview as signed integer
+    series (Crow's series checks read it; signature_valid with jsonEquals ties it to the key);
   - the program comes from the adapter (joint_waypoints or repeatability), the motion timeout from the estimate.
 Everything else (framing, CSV columns, statistics, signing) is the kit's.
 """
@@ -24,6 +25,7 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
+from ...core.approval import is_local_host
 from ...core.canonical import canonical, sha256_file
 from ...core.model import Cancelled, Deal, Episode, NotReady, Task
 from . import checks
@@ -139,11 +141,11 @@ def record(task: Task, *, program: List[list], speed: int, plan_text: str, host:
     if not rec.rows:
         raise RuntimeError("no valid packets recorded")
     return _write_episode(task, outdir, rec, program, speed, robot_info, signer, deal, status, abort_reason,
-                          duration, commands, stamp, preview_budget_bytes)
+                          duration, commands, stamp, preview_budget_bytes, host)
 
 
 def _write_episode(task, outdir, rec, program, speed, info, signer, deal, status, abort_reason, duration,
-                   commands, stamp, preview_budget_bytes) -> Episode:
+                   commands, stamp, preview_budget_bytes, host) -> Episode:
     from .kit import signers  # needs `cryptography`
 
     buf = io.StringIO()
@@ -184,9 +186,10 @@ def _write_episode(task, outdir, rec, program, speed, info, signer, deal, status
         {"id": "continuity", "ok": cont_v == 0},
         {"id": "timestamps-increasing", "ok": checks.timestamps_increasing(ts)},
     ]
-    preview = checks.choose_preview(q, qd, ts, preview_budget_bytes)
-    preview_bytes = canonical(preview)
-    (outdir / "preview.json").write_bytes(preview_bytes)
+    for a in arr:
+        a["t_ms"] = ts[a["sample"]] - ts[0] if a["sample"] is not None else None
+    # Signed inside the manifest, so that Crow's signature_valid (jsonEquals) ties the series its checks read.
+    preview = checks.choose_preview(q, qd, ts, preview_budget_bytes, keep=[a["sample"] for a in arr])
 
     first = dp.unpack(rec.first_packet, ["CRRobotType", "Load", "CenterX", "CenterY", "CenterZ",
                                          "UserFrame", "ToolFrame"])
@@ -223,7 +226,7 @@ def _write_episode(task, outdir, rec, program, speed, info, signer, deal, status
                                       "center_mm": [first["CenterX"], first["CenterY"], first["CenterZ"]]},
                   "user_frame": first["UserFrame"], "tool_frame": first["ToolFrame"],
                   "frames_note": "user/tool frame byte split (1200-1295) not yet verified on hardware"},
-        "recorder": {"version": RECORDER_VERSION},
+        "recorder": {"version": RECORDER_VERSION, "simulator": is_local_host(host)},
         "signer": {"type": signer.kind, "description": signer.description,
                    "algorithm": "ECDSA P-256 with SHA-256, DER signature, base64 in manifest.sig",
                    "pubkey_sha256": signers.fingerprint(pub), "key_attestation": None},
@@ -242,8 +245,7 @@ def _write_episode(task, outdir, rec, program, speed, info, signer, deal, status
         "summary": {"status": status, "arrivals": arr, "spec_violations": spec_v,
                     "continuity_violations": cont_v, "checks": summary_checks,
                     "all_ok": all(c["ok"] for c in summary_checks)},
-        "preview": {"rate_hz": preview["rate_hz"], "step": preview["step"], "samples": len(preview["t_ms"]),
-                    "sha256": hashlib.sha256(preview_bytes).hexdigest()},
+        "preview": preview,
     }
     body = canonical(manifest)
     (outdir / "manifest.json").write_bytes(body)

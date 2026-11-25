@@ -33,6 +33,8 @@ MAX_REPEAT_WAYPOINTS = 5
 # Upper bound: the minimum-jerk profile of fake_dobot.py, 1.875 D, plus 0.5 s per segment.
 SEGMENT_OVERHEAD_S, UPPER_FACTOR, UPPER_OVERHEAD_S = 0.32, 1.875, 0.5
 RECORDING_OVERHEAD_S = 3.5          # pre-roll, enable, settle, stop and disable, post-roll
+MAX_PREVIEW_STEP_MS = 500           # the widest gap allowed between preview samples (5 Hz plus jitter)
+PREVIEW_BUDGET_BYTES = 440_000      # the preview travels twice in a delivery (signed text + object)
 
 TASKS = {
     "joint_waypoints": "home, then 1 to 10 joint-space waypoints in order (MovJ, stop at each), then home; "
@@ -45,6 +47,13 @@ TASKS = {
 class DobotCR3A:
     robot_id = "dobot_cr3a"
     model = "DOBOT CR3A"
+
+    manifest_schema = episode.MANIFEST_SCHEMA
+    preview_series = tuple(checks.SERIES)
+    max_preview_step_ms = MAX_PREVIEW_STEP_MS
+    max_preview_samples = 10_000
+    max_targets = 1 + (MAX_REPEAT_WAYPOINTS + 1) * MAX_REPETITIONS        # repeatability: home + (wps + home) x N
+    max_samples = (MAX_RECORDING_S + 60) * 125
 
     # ------------------------------------------------------------------ pure
     def task_types(self) -> Dict[str, str]:
@@ -120,24 +129,60 @@ class DobotCR3A:
             lines.append(f"    MovJ {label:<5} {p}")
         return "\n".join(lines)
 
+    def params_schema(self, task_type: str, limits: Optional[dict] = None) -> dict:
+        """JSON Schema (2020-12) of `params` for buyers; the lab validates with the kit's own rules."""
+        lim = limits or PUBLIC_LIMITS
+        point = {"type": "array", "minItems": 6, "maxItems": 6,
+                 "prefixItems": [{"type": "number", "minimum": lo, "maximum": hi} for lo, hi in lim["allowed_envelope_deg"]],
+                 "description": "joint angles J1..J6 in degrees (J1 base, J6 flange)"}
+        props = {"speed_factor": {"type": "integer", "minimum": 1, "maximum": int(lim.get("max_speed_factor", 20)),
+                                  "description": f"global speed in percent; {lim.get('suggested_speed_factor', 30)} suggested"},
+                 "waypoints": {"type": "array", "minItems": 1, "items": point,
+                               "maxItems": MAX_REPEAT_WAYPOINTS if task_type == "repeatability" else orders.MAX_WAYPOINTS}}
+        required = ["speed_factor", "waypoints"]
+        if task_type == "repeatability":
+            props["repetitions"] = {"type": "integer", "minimum": 2, "maximum": MAX_REPETITIONS}
+            required.append("repetitions")
+        return {"type": "object", "additionalProperties": False, "required": required, "properties": props}
+
+    def example_order(self, task_type: str) -> dict:
+        params = {"speed_factor": 30, "waypoints": [[12.5, -15.0, 25.0, 30.0, -40.0, 45.0],
+                                                     [-10.0, 18.0, -20.0, -50.0, 35.0, -90.0]]}
+        if task_type == "repeatability":
+            params = {"speed_factor": 30, "waypoints": [[12.5, -15.0, 25.0, 30.0, -40.0, 45.0]], "repetitions": 5}
+        return {"schema": "roaas-task/1", "robot": self.robot_id, "task": task_type, "order_id": "my-order-0001",
+                "nonce": "<32 random lowercase hex characters, new for every order>",
+                "issued_at_utc": "<now, e.g. 2026-11-26T10:00:00Z>", "params": params}
+
+    def duration_note(self) -> str:
+        return (f"Motion time per segment is about |dq|/(vmax x speed) of the slowest joint plus "
+                f"{SEGMENT_OVERHEAD_S} s (calibrated on the real arm). Orders whose estimated recording exceeds "
+                f"{MAX_RECORDING_S} s are refused at quote time.")
+
     def check_bounds(self, limits: Optional[dict] = None) -> Dict[str, List[int]]:
+        """Integer bounds per preview series (millidegrees, millidegrees per second, ms), for Crow's checks."""
         env = (limits or PUBLIC_LIMITS)["allowed_envelope_deg"]
-        b = {f"q{j + 1}": [math.floor(env[j][0] - 1), math.ceil(env[j][1] + 1)] for j in range(6)}
+        b = {f"q{j + 1}_mdeg": [math.floor(env[j][0] - 1) * 1000, math.ceil(env[j][1] + 1) * 1000] for j in range(6)}
         for j, v in enumerate(dp.CR3A_SPEC["joint_speed_max_deg_s"]):
-            b[f"qd{j + 1}"] = [-math.ceil(v * 1.02), math.ceil(v * 1.02)]
+            b[f"qd{j + 1}_mdeg_s"] = [-math.ceil(v * 1.02) * 1000, math.ceil(v * 1.02) * 1000]
         b["t_ms"] = [0, (MAX_RECORDING_S + 60) * 1000]
         return b
 
     def verify_preview(self, preview: dict, manifest: dict) -> List[CheckResult]:
+        """The checks Crow's adjudicators can also run on the signed preview (see crow_template)."""
         res = []
         bounds = self.check_bounds({"allowed_envelope_deg": manifest["program"]["allowed_envelope_deg"]})
         n = len(preview.get("t_ms", []))
-        same_len = all(len(preview.get(c, [])) == n for c in bounds)
-        res.append(CheckResult("preview-shape", same_len and n == manifest["preview"]["samples"], f"{n} samples"))
+        same = all(len(preview.get(c, [])) == n for c in checks.SERIES)
+        res.append(CheckResult("preview-equal-lengths", same and n == preview.get("samples"), f"{n} samples"))
+        ints = all(isinstance(x, int) and not isinstance(x, bool) for c in checks.SERIES for x in preview.get(c, []))
+        res.append(CheckResult("preview-integers", ints))
         out = [f"{c}={x}" for c, (lo, hi) in bounds.items() for x in preview.get(c, []) if not lo <= x <= hi]
         res.append(CheckResult("preview-bounds", not out, f"{len(out)} outside" + (f", first {out[:3]}" if out else "")))
         t = preview.get("t_ms", [])
-        res.append(CheckResult("preview-time-increasing", all(b > a for a, b in zip(t, t[1:]))))
+        steps = [b - a for a, b in zip(t, t[1:])]
+        res.append(CheckResult("preview-time", all(1 <= d <= MAX_PREVIEW_STEP_MS for d in steps),
+                               f"steps {min(steps, default=0)}..{max(steps, default=0)} ms"))
         return res
 
     def verify_episode_dir(self, episode_dir: Path, order_raw: Optional[bytes] = None,
@@ -169,7 +214,7 @@ class DobotCR3A:
         return RobotStatus(True, True, "", mode, "", True)
 
     def execute(self, task: Task, *, host: str, robot_info: dict, approval, signer, out_dir: Path,
-                deal: Deal, preview_budget_bytes: int = 860_000, dashboard_port: int = 29999,
+                deal: Deal, preview_budget_bytes: int = PREVIEW_BUDGET_BYTES, dashboard_port: int = 29999,
                 feedback_port: int = 30004) -> Episode:
         for which, lim in (("public", PUBLIC_LIMITS), ("lab", robot_info)):
             v = self.validate(task, lim)

@@ -1,0 +1,581 @@
+{
+  "deliverable": {
+    "kind": "dataset",
+    "description": "One recorded run of a DOBOT CR3A robot (task {{task}}), made after this order and delivered as one JSON document, roaas-episode/1. The order is the buyer's: nonce {{nonce}}, order SHA-256 {{orderSha256}}, carried byte for byte in order_text. The document holds the lab's manifest twice, as the exact text the lab's key signed (manifest_text, ECDSA P-256, signature in manifest_sig, key in pubkey_spki_b64) and as the same object (manifest), which names this order, a completed run on the robot (not a simulator), every program target reached within 1 degree, no datasheet or continuity violation, and a preview of the recording as integer series (time in ms, joint positions in millidegrees, joint speeds in millidegrees per second) inside the lab's published envelope. The full 125 Hz telemetry (telemetry.csv.gz, its SHA-256 in the signed manifest) is linked from full_telemetry, encrypted; its key is in this document, so the buyer can read it once the deal is released. The signer key's fingerprint is given to the buyer separately.",
+    "format": "application/json"
+  },
+  "checks": [
+    {
+      "id": "format",
+      "type": "json_schema",
+      "required": true,
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "format",
+          "manifest",
+          "manifest_text",
+          "manifest_sig",
+          "pubkey_spki_b64",
+          "order_text",
+          "full_telemetry"
+        ],
+        "properties": {
+          "format": {
+            "const": "roaas-episode/1"
+          },
+          "manifest": {
+            "type": "object"
+          },
+          "manifest_text": {
+            "type": "string",
+            "minLength": 100,
+            "maxLength": 1000000
+          },
+          "manifest_sig": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+            "minLength": 80,
+            "maxLength": 120
+          },
+          "pubkey_spki_b64": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+            "minLength": 100,
+            "maxLength": 200
+          },
+          "order_text": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 4000
+          },
+          "full_telemetry": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "url",
+              "cipher",
+              "key",
+              "ciphertext_sha256",
+              "bytes",
+              "plaintext"
+            ],
+            "properties": {
+              "url": {
+                "type": "string",
+                "pattern": "^https://[A-Za-z0-9.-]{3,100}/[A-Za-z0-9._~/-]{1,300}$"
+              },
+              "cipher": {
+                "const": "aes-256-gcm:iv12|ciphertext|tag16"
+              },
+              "key": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9+/]{43}=$"
+              },
+              "ciphertext_sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 29,
+                "maximum": 200000000
+              },
+              "plaintext": {
+                "const": "telemetry.csv.gz"
+              },
+              "available_until": {
+                "type": "string",
+                "maxLength": 40
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "order-text",
+      "type": "json_schema",
+      "required": true,
+      "schema": {
+        "type": "object",
+        "required": [
+          "order_text"
+        ],
+        "properties": {
+          "order_text": {
+            "const": "{{orderText}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "manifest-signature",
+      "type": "signature_valid",
+      "required": true,
+      "alg": "ecdsa-p256-sha256",
+      "publicKey": {
+        "pointer": "/pubkey_spki_b64",
+        "format": "spki-base64",
+        "spkiSha256": "sha256:0e811c503e02aa59faa288365e0f80023603ee9cfcd64f3ac4e67200960289af"
+      },
+      "message": {
+        "pointer": "/manifest_text",
+        "encoding": "utf8",
+        "jsonEquals": "/manifest"
+      },
+      "signature": {
+        "pointer": "/manifest_sig",
+        "encoding": "base64",
+        "format": "der"
+      }
+    },
+    {
+      "id": "order",
+      "type": "json_schema",
+      "required": true,
+      "schema": {
+        "type": "object",
+        "required": [
+          "manifest"
+        ],
+        "properties": {
+          "manifest": {
+            "type": "object",
+            "required": [
+              "order",
+              "task"
+            ],
+            "properties": {
+              "order": {
+                "type": "object",
+                "required": [
+                  "nonce",
+                  "order_sha256"
+                ],
+                "properties": {
+                  "nonce": {
+                    "const": "{{nonce}}"
+                  },
+                  "order_sha256": {
+                    "const": "{{orderSha256}}"
+                  }
+                }
+              },
+              "task": {
+                "type": "object",
+                "required": [
+                  "robot",
+                  "task"
+                ],
+                "properties": {
+                  "robot": {
+                    "const": "dobot_cr3a"
+                  },
+                  "task": {
+                    "const": "{{task}}"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "run",
+      "type": "json_schema",
+      "required": true,
+      "schema": {
+        "type": "object",
+        "required": [
+          "manifest"
+        ],
+        "properties": {
+          "manifest": {
+            "type": "object",
+            "required": [
+              "schema",
+              "status",
+              "program",
+              "recorder",
+              "signer",
+              "summary"
+            ],
+            "properties": {
+              "schema": {
+                "const": "dobot-episode/0.6"
+              },
+              "status": {
+                "const": "completed"
+              },
+              "program": {
+                "type": "object",
+                "required": [
+                  "record_only"
+                ],
+                "properties": {
+                  "record_only": {
+                    "const": false
+                  }
+                }
+              },
+              "recorder": {
+                "type": "object",
+                "required": [
+                  "simulator"
+                ],
+                "properties": {
+                  "simulator": {
+                    "const": false
+                  }
+                }
+              },
+              "signer": {
+                "type": "object",
+                "required": [
+                  "pubkey_sha256"
+                ],
+                "properties": {
+                  "pubkey_sha256": {
+                    "const": "0e811c503e02aa59faa288365e0f80023603ee9cfcd64f3ac4e67200960289af"
+                  }
+                }
+              },
+              "summary": {
+                "type": "object",
+                "required": [
+                  "all_ok",
+                  "spec_violations",
+                  "continuity_violations"
+                ],
+                "properties": {
+                  "all_ok": {
+                    "const": true
+                  },
+                  "spec_violations": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 0
+                  },
+                  "continuity_violations": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "arrivals",
+      "type": "json_schema",
+      "required": true,
+      "schema": {
+        "type": "object",
+        "required": [
+          "manifest"
+        ],
+        "properties": {
+          "manifest": {
+            "type": "object",
+            "required": [
+              "summary"
+            ],
+            "properties": {
+              "summary": {
+                "type": "object",
+                "required": [
+                  "arrivals"
+                ],
+                "properties": {
+                  "arrivals": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 61,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "reached",
+                        "sample",
+                        "max_error_deg",
+                        "t_ms"
+                      ],
+                      "properties": {
+                        "reached": {
+                          "const": true
+                        },
+                        "sample": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "max_error_deg": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        "t_ms": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "samples",
+      "type": "json_schema",
+      "required": true,
+      "schema": {
+        "type": "object",
+        "required": [
+          "manifest"
+        ],
+        "properties": {
+          "manifest": {
+            "type": "object",
+            "required": [
+              "stats"
+            ],
+            "properties": {
+              "stats": {
+                "type": "object",
+                "required": [
+                  "samples"
+                ],
+                "properties": {
+                  "samples": {
+                    "type": "integer",
+                    "minimum": 125,
+                    "maximum": 82500
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "preview-bounds",
+      "type": "json_schema",
+      "required": true,
+      "schema": {
+        "type": "object",
+        "required": [
+          "manifest"
+        ],
+        "properties": {
+          "manifest": {
+            "type": "object",
+            "required": [
+              "preview"
+            ],
+            "properties": {
+              "preview": {
+                "type": "object",
+                "required": [
+                  "t_ms",
+                  "q1_mdeg",
+                  "q2_mdeg",
+                  "q3_mdeg",
+                  "q4_mdeg",
+                  "q5_mdeg",
+                  "q6_mdeg",
+                  "qd1_mdeg_s",
+                  "qd2_mdeg_s",
+                  "qd3_mdeg_s",
+                  "qd4_mdeg_s",
+                  "qd5_mdeg_s",
+                  "qd6_mdeg_s"
+                ],
+                "properties": {
+                  "t_ms": {
+                    "type": "array",
+                    "minItems": 20,
+                    "maxItems": 10000,
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 660000
+                    }
+                  },
+                  "q1_mdeg": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": -21000,
+                      "maximum": 21000
+                    }
+                  },
+                  "q2_mdeg": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": -31000,
+                      "maximum": 31000
+                    }
+                  },
+                  "q3_mdeg": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": -46000,
+                      "maximum": 46000
+                    }
+                  },
+                  "q4_mdeg": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": -91000,
+                      "maximum": 91000
+                    }
+                  },
+                  "q5_mdeg": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": -91000,
+                      "maximum": 91000
+                    }
+                  },
+                  "q6_mdeg": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": -181000,
+                      "maximum": 181000
+                    }
+                  },
+                  "qd1_mdeg_s": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": -184000,
+                      "maximum": 184000
+                    }
+                  },
+                  "qd2_mdeg_s": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": -184000,
+                      "maximum": 184000
+                    }
+                  },
+                  "qd3_mdeg_s": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": -228000,
+                      "maximum": 228000
+                    }
+                  },
+                  "qd4_mdeg_s": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": -228000,
+                      "maximum": 228000
+                    }
+                  },
+                  "qd5_mdeg_s": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": -228000,
+                      "maximum": 228000
+                    }
+                  },
+                  "qd6_mdeg_s": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": -228000,
+                      "maximum": 228000
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "preview-lengths",
+      "type": "equal_lengths",
+      "required": true,
+      "series": [
+        {
+          "pointer": "/manifest/preview/t_ms"
+        },
+        {
+          "pointer": "/manifest/preview/q1_mdeg"
+        },
+        {
+          "pointer": "/manifest/preview/q2_mdeg"
+        },
+        {
+          "pointer": "/manifest/preview/q3_mdeg"
+        },
+        {
+          "pointer": "/manifest/preview/q4_mdeg"
+        },
+        {
+          "pointer": "/manifest/preview/q5_mdeg"
+        },
+        {
+          "pointer": "/manifest/preview/q6_mdeg"
+        },
+        {
+          "pointer": "/manifest/preview/qd1_mdeg_s"
+        },
+        {
+          "pointer": "/manifest/preview/qd2_mdeg_s"
+        },
+        {
+          "pointer": "/manifest/preview/qd3_mdeg_s"
+        },
+        {
+          "pointer": "/manifest/preview/qd4_mdeg_s"
+        },
+        {
+          "pointer": "/manifest/preview/qd5_mdeg_s"
+        },
+        {
+          "pointer": "/manifest/preview/qd6_mdeg_s"
+        }
+      ]
+    },
+    {
+      "id": "preview-time",
+      "type": "monotonic_column",
+      "required": true,
+      "series": {
+        "pointer": "/manifest/preview/t_ms"
+      },
+      "minStep": 1,
+      "maxStep": 500
+    },
+    {
+      "id": "hidden",
+      "type": "hidden_characters_max",
+      "required": true,
+      "max": {
+        "total": 0
+      }
+    }
+  ]
+}

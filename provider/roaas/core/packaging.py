@@ -2,8 +2,9 @@
 
 Level 1, the Crow delivery: ONE JSON document of at most 1 MiB that adjudicators' checks can read:
   manifest (object) + manifest_text (the exact signed bytes) + manifest_sig + pubkey_spki_b64
-  + order_text (the exact order) + preview (column-major, its hash is in the signed manifest)
-  + full_telemetry {url, key, hashes}.
+  + order_text (the exact order) + full_telemetry {url, key, hashes}.
+  The checkable preview (integer series) is INSIDE the signed manifest: Crow's signature_valid check with
+  jsonEquals /manifest ties every series its other checks read to the lab's key.
 Level 2, the full 125 Hz telemetry (the kit's telemetry.csv.gz, hash in the manifest), encrypted with a fresh
 AES-256-GCM key and stored by us; its key travels only inside level 1, so the buyer gets it on release.
 
@@ -13,6 +14,7 @@ The public key is base64 SPKI DER (no newlines anywhere in the document), a form
 from __future__ import annotations
 
 import base64
+import datetime as dt
 import json
 from pathlib import Path
 from typing import Optional, Tuple
@@ -20,11 +22,12 @@ from typing import Optional, Tuple
 from cryptography.hazmat.primitives import serialization
 
 from . import crypto
-from .canonical import canonical, sha256_hex
+from .canonical import sha256_hex
 
 FORMAT = "roaas-episode/1"
 CIPHER = "aes-256-gcm:iv12|ciphertext|tag16"
 MAX_DELIVERY_BYTES = 1_000_000          # Crow: 1 048 576 bytes of ciphertext, minus IV, tag and margin
+RETENTION_DAYS = 30                     # placeholder: how long we keep the full telemetry for the buyer
 
 
 def spki_b64_from_pem(pem: bytes) -> str:
@@ -40,15 +43,15 @@ def pem_from_spki_b64(spki_b64: str) -> bytes:
 
 def build_delivery(episode_dir: Path, *, telemetry_url: str, available_until: Optional[str] = None
                    ) -> Tuple[bytes, bytes]:
-    """Returns (delivery_json_bytes, encrypted_full_telemetry). Upload the second to `telemetry_url`."""
+    """Returns (delivery_json_bytes, encrypted_full_telemetry). Upload the second to `telemetry_url`.
+    `available_until` (ISO date) is our promise to keep the full telemetry; default: today + RETENTION_DAYS."""
+    if not available_until:
+        available_until = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=RETENTION_DAYS)).strftime("%Y-%m-%d")
     ep = Path(episode_dir)
     manifest_bytes = (ep / "manifest.json").read_bytes()
     manifest = json.loads(manifest_bytes)
     if manifest.get("status") != "completed":
         raise ValueError(f"episode status is {manifest.get('status')}: an aborted run is never delivered")
-    preview_bytes = (ep / "preview.json").read_bytes()
-    if sha256_hex(preview_bytes) != manifest["preview"]["sha256"]:
-        raise ValueError("preview.json does not match the signed manifest")
     telemetry = (ep / "telemetry.csv.gz").read_bytes()
     ciphertext, key = crypto.encrypt(telemetry)
     doc = {
@@ -58,7 +61,6 @@ def build_delivery(episode_dir: Path, *, telemetry_url: str, available_until: Op
         "manifest_sig": (ep / "manifest.sig").read_text().strip(),
         "pubkey_spki_b64": spki_b64_from_pem((ep / "pubkey.pem").read_bytes()),
         "order_text": (ep / "order.json").read_bytes().decode("utf-8"),
-        "preview": json.loads(preview_bytes),
         "full_telemetry": {
             "url": telemetry_url,
             "cipher": CIPHER,
@@ -85,5 +87,4 @@ def reconstruct_episode_dir(doc: dict, telemetry_gz: bytes, dest: Path) -> Path:
     (dest / "pubkey.pem").write_bytes(pem_from_spki_b64(doc["pubkey_spki_b64"]))
     (dest / "order.json").write_bytes(doc["order_text"].encode("utf-8"))
     (dest / "telemetry.csv.gz").write_bytes(telemetry_gz)
-    (dest / "preview.json").write_bytes(canonical(doc["preview"]))
     return dest

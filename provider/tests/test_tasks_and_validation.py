@@ -91,7 +91,7 @@ def test_too_long_recording_is_refused_at_validation():
 
 def test_check_bounds_are_integers_with_margin():
     b = CR3A.check_bounds()
-    assert b["q1"] == [-21, 21] and b["q6"] == [-181, 181]
+    assert b["q1_mdeg"] == [-21000, 21000] and b["q6_mdeg"] == [-181000, 181000] and b["qd1_mdeg_s"] == [-184000, 184000]
     assert all(isinstance(x, int) for lo_hi in b.values() for x in lo_hi)
 
 

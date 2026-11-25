@@ -139,32 +139,39 @@ def verify_episode_dir(ep: Path, order_raw: Optional[bytes] = None, fingerprint:
     res.append(CheckResult("timestamps-increasing", timestamps_increasing(ts)))
     n = continuity_violations(q, ts)
     res.append(CheckResult("continuity", n == 0, f"{n} jumps"))
-    if "preview" in m and (ep / "preview.json").exists():
-        res.append(CheckResult("preview-hash", sha256_hex((ep / "preview.json").read_bytes()) == m["preview"]["sha256"]))
+    if "preview" in m:
+        pv = m["preview"]
+        again = preview_series(q, qd, ts, pv["step"], pv.get("source_samples", ()))
+        res.append(CheckResult("preview-matches-telemetry", again == pv,
+                               f"{pv['samples']} samples at {pv['rate_hz']} Hz"))
     return res
 
 
-def preview_columns(rows_q, rows_qd, ts_ms, step: int) -> dict:
-    """Column-major preview (one array per joint), every `step`-th sample, rounded to 0.001."""
-    idx = list(range(0, len(ts_ms), step))
-    if idx and idx[-1] != len(ts_ms) - 1:
-        idx.append(len(ts_ms) - 1)      # always keep the last sample (robot back home)
-    t0 = ts_ms[0] if ts_ms else 0
-    p = {"rate_hz": round(125 / step, 3), "step": step, "t_ms": [ts_ms[k] - t0 for k in idx]}
+def preview_series(q, qd, ts_ms, step: int, keep=()) -> dict:
+    """The checkable preview: every `step`-th sample plus the samples in `keep` (the arrivals) and the last one,
+    as INTEGER series, one per axis (Crow's series checks read integers only): time in ms from the first sample,
+    positions in millidegrees, speeds in millidegrees per second."""
+    n = len(ts_ms)
+    idx = sorted(set(range(0, n, step)) | {n - 1} | {k for k in keep if k is not None and 0 <= k < n})
+    t0 = ts_ms[0] if n else 0
+    p = {"rate_hz": round(125 / step, 3), "step": step, "samples": len(idx), "t_ms": [ts_ms[k] - t0 for k in idx]}
     for j in range(6):
-        p[f"q{j + 1}"] = [round(rows_q[k][j], 3) for k in idx]
+        p[f"q{j + 1}_mdeg"] = [int(round(q[k][j] * 1000)) for k in idx]
     for j in range(6):
-        p[f"qd{j + 1}"] = [round(rows_qd[k][j], 3) for k in idx]
+        p[f"qd{j + 1}_mdeg_s"] = [int(round(qd[k][j] * 1000)) for k in idx]
+    p["source_samples"] = idx
     return p
 
 
+SERIES = ["t_ms"] + [f"q{j}_mdeg" for j in range(1, 7)] + [f"qd{j}_mdeg_s" for j in range(1, 7)]
 PREVIEW_STEPS = (1, 2, 5, 12, 25)      # 125, 62.5, 25, ~10.4, 5 Hz
 
 
-def choose_preview(rows_q, rows_qd, ts_ms, budget_bytes: int) -> dict:
-    """The densest preview whose canonical JSON fits in `budget_bytes`."""
+def choose_preview(q, qd, ts_ms, budget_bytes: int, keep=()) -> dict:
+    """The densest preview whose canonical JSON fits in `budget_bytes` (it travels twice in a delivery: as the
+    signed text and as the object the checks read)."""
     for step in PREVIEW_STEPS:
-        p = preview_columns(rows_q, rows_qd, ts_ms, step)
+        p = preview_series(q, qd, ts_ms, step, keep)
         if len(canonical(p)) <= budget_bytes:
             return p
     raise ValueError(f"even a 5 Hz preview exceeds {budget_bytes} bytes: the recording is too long")

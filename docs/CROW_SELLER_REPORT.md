@@ -275,3 +275,19 @@ Resolution: option A, a two-level delivery (decision D14).
 - whether the seller API's refusal reason can be passed through to the buyer.
 
 These are good questions for Crow.
+
+## 12. Update, 2026-11-25 afternoon
+
+Crow added four check kinds (commit `423ffcd`): `signature_valid`, `equal_lengths`, `monotonic_column` and
+`passes_through`. So:
+
+- **The difference "checks cannot verify the signature" (section 9) is closed.** It still depends on the
+  adjudicators listing the kind in `checkKinds`.
+- **Recorded series can be checked:** lengths, time order and step, and waypoints, provided the waypoints are
+  in the terms.
+- **The deal-template limit is 20 checks** (`commitment.schema.json`).
+- The pilot bridge (Rafa's `crow_bridge.py`) shows the expected seller adapter configuration: scope
+  `orderText`/`nonce`/`orderSha256`, `sellerApi` with a base URL and an auth header, `signingKey: "standing"`,
+  `fundWithinSec` 7200, and `deliverWithinSec` above 7200.
+
+ROaaS phase 4 uses all of this: see ARCHITECTURE §4.5 and decision D19.

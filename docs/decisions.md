@@ -130,4 +130,17 @@ To keep the pilot intact, ROaaS never edits the kit on the robot PC (`C:\dobot_k
 Fact learnt from the page: the operators refuse `deliverWithinSec` ≤ 7200 s (`fundBy < deliverBy`), so
 every deal's delivery window must exceed 2 h, even in `auto` mode.
 
+**D19. Phase 4: the checks use Crow's new proof kinds** (added to Crow on 2026-11-25:
+`signature_valid`, `equal_lengths`, `monotonic_column`, `passes_through`).
+
+- **The checkable preview moves inside the signed manifest,** as integer series (ms, millidegrees,
+  millidegrees per second), with every arrival sample kept. `signature_valid` with `jsonEquals: /manifest`
+  ties every series the other checks read to the lab's key; a hash alone would not tie them.
+- **`recorder.simulator`** replaces `target_host` for the "not a simulator" check.
+- **Rehearsal terms** (`crow/rehearsal/`) accept simulator runs only, as in Crow's pilot bridge.
+- **Scope fields:** `task`, `orderText`, `nonce`, `orderSha256`, the pilot bridge's fields plus `task`.
+- **`passes_through`** against the buyer's waypoints waits for per-deal integer waypoints in the terms (Q11).
+- **Verified offline with Crow's adjudicator code** (commit `423ffcd`): good deliveries are accepted and every
+  tampering is rejected (ARCHITECTURE §4.5).
+
 Open questions for Crow are tracked in `questions-for-crow.md`.

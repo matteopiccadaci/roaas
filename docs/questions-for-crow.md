@@ -25,9 +25,9 @@ Status values: `open`, `asked`, `answered`, `dropped`.
   the adjudicators run this check?
 - **Why:** With it, the ECDSA signature is verified before payment, not only by the buyer afterwards. We
   will shape our delivery for it from the start.
-- **Status:** open
-- **Answer:**
-- **Date:**
+- **Status:** partly answered (from the repository)
+- **Answer:** Implemented in the repository at commit `423ffcd` (packages/judgment/src/checks/signature-valid.ts), documented in site/ref/checks.txt, together with `equal_lengths`, `monotonic_column` and `passes_through`. ROaaS uses it (decision D19); Crow's own check-delivery.ts verifies our signature. **Still to confirm:** that the three testnet adjudicators list these kinds in `checkKinds` (an adjudicator lacking a kind declines the offer).
+- **Date:** 2026-11-25
 
 ## Q3. Delivery size above 1 MiB
 
@@ -116,9 +116,9 @@ Status values: `open`, `asked`, `answered`, `dropped`.
 - **Why:** Today a check can pin the buyer's exact order text (`const "{{order}}"`), but it cannot check each
   arrival against its own waypoint. That check stays seller-declared (covered by the signature) and is
   verified by the buyer offline.
-- **Status:** open
-- **Answer:**
-- **Date:**
+- **Status:** open (narrowed)
+- **Answer:** `passes_through` now exists and checks a series against waypoints in the terms. To use it with the BUYER's waypoints, the hosted adapter would need per-deal integer lists: a scope rule type such as a list of integer lists (millidegrees), filled by a whole `{{waypointsMdeg}}` placeholder, or extra checks returned by our `quote`. Ask which Crow prefers.
+- **Date:** 2026-11-25
 
 ## Q12. Telling a real arm from the simulator
 
@@ -127,6 +127,6 @@ Status values: `open`, `asked`, `answered`, `dropped`.
   it (a private LAN address such as `192.168.5.1` reveals little), or replace it with an explicit signed
   field such as `recorder.simulator: false`?
 - **Why:** It decides whether ROaaS deliveries can pass the same check as the pilot.
-- **Status:** open
-- **Answer:**
-- **Date:**
+- **Status:** open (we chose a proposal)
+- **Answer:** ROaaS manifests carry a signed `recorder.simulator` (true only for a robot on the lab PC itself) and our checks require it to be false (true in rehearsal terms). Ask whether Crow is fine with this instead of `target_host`.
+- **Date:** 2026-11-25

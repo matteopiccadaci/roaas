@@ -10,9 +10,10 @@ cd provider
 python -m venv .venv && source .venv/bin/activate       # Windows: .venv\Scripts\Activate.ps1
 pip install -e ".[test]"
 pytest                                                  # starts the kit's fake controller on free ports
+CROW_REPO=<built Crow clone> pytest                     # also runs Crow's adjudicator code on a delivery
 ```
 
-## Commands (phase 3)
+## Commands
 
 | Command | What it does |
 |---|---|
@@ -20,6 +21,9 @@ pytest                                                  # starts the kit's fake 
 | `roaas probe --host IP` | Read-only robot status. *Ready* means: dashboard answers, robot disabled (mode 4), no alarm |
 | `roaas run ORDER --robot-info FILE [--host IP --live] [--crow-delivery]` | Manual path: approval, run, record, sign, verify, zip in the kit's layout. With `--crow-delivery`, it also writes a `roaas-episode/1` document and the encrypted full telemetry |
 | `roaas verify-delivery DOC [--order FILE --fingerprint HEX --telemetry FILE]` | Buyer-side check of a `roaas-episode/1` delivery: the document alone, or with the full telemetry |
+| `roaas offers build --fingerprint HEX [--out crow] [--rehearsal]` | Generates the Crow deal template, the seller adapter configuration and the offer catalogue (see `crow/README.md`) |
+| `roaas scope ORDER` | The Crow scope a buyer sends for an order |
+| `roaas terms ORDER --template FILE` | The deal terms filled for that order, for Crow's `check-delivery.ts` |
 
 `--live` is required for any robot that is not on this machine. The operator then types `ENABLE`. Without
 `--live`, only a local fake controller is accepted.

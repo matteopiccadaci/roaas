@@ -5,6 +5,10 @@
   roaas run ORDER --robot-info FILE [--host IP --live] [--crow-delivery]
                                                 manual path: approve, run, record, sign, verify, zip
   roaas verify-delivery DOC [--order FILE --fingerprint HEX --telemetry FILE]
+  roaas offers build --fingerprint HEX [--job-api URL --payout 0x.. --pricing FILE --out DIR]
+                                                Crow deal template, seller adapter config, offer catalogue
+  roaas scope ORDER                             the Crow scope a buyer sends for this order
+  roaas terms ORDER --template FILE             the filled deal terms for this order (for check-delivery.ts)
 
 Moving a robot that is not on this machine needs --live, and then the operator types ENABLE.
 """
@@ -84,7 +88,7 @@ def cmd_run(a):
     z = package_zip(ep.path, Path(a.deliveries))
     print(f"\n[deliver] {z}")
     if a.crow_delivery:
-        doc, ct = build_delivery(ep.path, telemetry_url=f"file:{ep.path.name}.telemetry.enc",
+        doc, ct = build_delivery(ep.path, telemetry_url=a.telemetry_url or f"file:{ep.path.name}.telemetry.enc",
                                  available_until=(dt.date.today() + dt.timedelta(days=30)).isoformat())
         (Path(a.deliveries) / f"{ep.path.name}.roaas-episode.json").write_bytes(doc)
         (Path(a.deliveries) / f"{ep.path.name}.telemetry.enc").write_bytes(ct)
@@ -102,6 +106,54 @@ def cmd_verify_delivery(a):
     ok = all(r.ok for r in results)
     print("\nRESULT:", "delivery VALID" if ok else "delivery NOT valid")
     sys.exit(0 if ok else 1)
+
+
+DEFAULT_PRICING = {
+    "token": "PLACEHOLDER: Crow Test USDC token address on Sepolia",
+    "deliver_within_sec": 259200,
+    "joint_waypoints": {"formula": "base + per_waypoint x waypoints", "base": "PLACEHOLDER", "per_waypoint": "PLACEHOLDER"},
+    "repeatability": {"formula": "base + per_waypoint x waypoints x repetitions", "base": "PLACEHOLDER",
+                      "per_waypoint": "PLACEHOLDER"},
+}
+
+
+def cmd_offers(a):
+    from .settlement import crow_terms as ct
+
+    adapter = get_adapter(a.robot)
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    pricing_path = Path(a.pricing) if a.pricing else out / "pricing.json"
+    if not pricing_path.exists():
+        pricing_path.write_text(ct.dumps(DEFAULT_PRICING))
+        print(f"[offers] wrote placeholder prices to {pricing_path}: fill them in")
+    pricing = json.loads(pricing_path.read_text())
+    tmpl = ct.template(adapter, a.fingerprint.lower(), rehearsal=a.rehearsal)
+    bad = ct.floats_in(tmpl)
+    if bad:
+        sys.exit(f"[offers] the template holds non-integer numbers (Crow ADR-0022): {bad[:5]}")
+    cfg = ct.adapter_config(a.job_api, a.payout, {"deliverWithinSec": int(pricing.get("deliver_within_sec", 259200))})
+    (out / "template.json").write_text(ct.dumps(tmpl))
+    (out / "seller.json").write_text(ct.dumps(cfg))
+    (out / "offers.json").write_text(ct.dumps(ct.offers_catalog(adapter, pricing, a.job_api)))
+    print(f"[offers] wrote {out / 'template.json'} ({len(tmpl['checks'])} checks), {out / 'seller.json'}, "
+          f"{out / 'offers.json'} ({len(adapter.task_types())} offers)")
+
+
+def cmd_scope(a):
+    from .settlement import crow_terms as ct
+    print(json.dumps(ct.scope_for_order(Path(a.order).read_bytes()), indent=2))
+
+
+def cmd_terms(a):
+    from .settlement import crow_terms as ct
+    terms = ct.terms_for(json.loads(Path(a.template).read_text()), ct.scope_for_order(Path(a.order).read_bytes()))
+    text = ct.dumps(terms)
+    if a.out:
+        Path(a.out).write_text(text)
+        print(f"[terms] wrote {a.out}")
+    else:
+        print(text)
 
 
 def main(argv=None):
@@ -128,6 +180,7 @@ def main(argv=None):
     p.add_argument("--dashboard-port", type=int, default=29999)
     p.add_argument("--feedback-port", type=int, default=30004)
     p.add_argument("--crow-delivery", action="store_true", help="also write a roaas-episode/1 delivery (test)")
+    p.add_argument("--telemetry-url", help="where the encrypted full telemetry will be served (https://...)")
     p.set_defaults(func=cmd_run)
     p = sub.add_parser("verify-delivery")
     p.add_argument("delivery")
@@ -135,6 +188,24 @@ def main(argv=None):
     p.add_argument("--fingerprint")
     p.add_argument("--telemetry", help="the encrypted full telemetry downloaded from the delivery's URL")
     p.set_defaults(func=cmd_verify_delivery)
+    p = sub.add_parser("offers")
+    p.add_argument("action", choices=["build"])
+    p.add_argument("--robot", default="dobot_cr3a")
+    p.add_argument("--fingerprint", required=True, help="SHA-256 hex of the lab key (printed after every run)")
+    p.add_argument("--job-api", default="https://PLACEHOLDER.vercel.app", help="base URL of the ROaaS job API")
+    p.add_argument("--payout", default="PLACEHOLDER", help="0x address that receives payments")
+    p.add_argument("--pricing", help="pricing JSON (default: <out>/pricing.json, created with placeholders)")
+    p.add_argument("--out", default="crow")
+    p.add_argument("--rehearsal", action="store_true", help="terms for simulator runs only (never for a deal)")
+    p.set_defaults(func=cmd_offers)
+    p = sub.add_parser("scope")
+    p.add_argument("order")
+    p.set_defaults(func=cmd_scope)
+    p = sub.add_parser("terms")
+    p.add_argument("order")
+    p.add_argument("--template", required=True)
+    p.add_argument("--out")
+    p.set_defaults(func=cmd_terms)
     a = ap.parse_args(argv)
     a.func(a)
 

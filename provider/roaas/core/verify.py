@@ -18,7 +18,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from . import crypto
-from .canonical import canonical, sha256_hex
+from .canonical import sha256_hex
 from .model import CheckResult
 from .packaging import FORMAT, pem_from_spki_b64, reconstruct_episode_dir
 
@@ -56,11 +56,10 @@ def verify_delivery(delivery: bytes, *, expected_order: Optional[bytes] = None,
     res.append(CheckResult("order-hash", sha256_hex(order) == m["order"]["order_sha256"]))
     if expected_order is not None:
         res.append(CheckResult("order-is-yours", order == expected_order, "byte-identical to your order"))
-    res.append(CheckResult("preview-hash", sha256_hex(canonical(doc.get("preview"))) == m["preview"]["sha256"]))
     res.append(CheckResult("status", m.get("status") == "completed" and m.get("summary", {}).get("all_ok") is True,
                            f"{m.get('status')}, summary all_ok={m.get('summary', {}).get('all_ok')}"))
     adapter = get_adapter(m["task"]["robot"])
-    res += adapter.verify_preview(doc["preview"], m)
+    res += adapter.verify_preview(m["preview"], m)
 
     if telemetry_ciphertext is not None:
         ft = doc["full_telemetry"]

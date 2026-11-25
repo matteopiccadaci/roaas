@@ -1,0 +1,343 @@
+{
+  "provider": "ROaaS",
+  "network": "Ethereum Sepolia testnet (Crow Test USDC, no value)",
+  "offers": [
+    {
+      "id": "dobot_cr3a/joint_waypoints",
+      "robot": {
+        "id": "dobot_cr3a",
+        "model": "DOBOT CR3A",
+        "controller_firmware": "4.5.1.1"
+      },
+      "task": "joint_waypoints",
+      "summary": "home, then 1 to 10 joint-space waypoints in order (MovJ, stop at each), then home; 125 Hz controller telemetry, signed",
+      "order": {
+        "schema": "roaas-task/1",
+        "params_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "speed_factor",
+            "waypoints"
+          ],
+          "properties": {
+            "speed_factor": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "global speed in percent; 30 suggested"
+            },
+            "waypoints": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "array",
+                "minItems": 6,
+                "maxItems": 6,
+                "prefixItems": [
+                  {
+                    "type": "number",
+                    "minimum": -20,
+                    "maximum": 20
+                  },
+                  {
+                    "type": "number",
+                    "minimum": -30,
+                    "maximum": 30
+                  },
+                  {
+                    "type": "number",
+                    "minimum": -45,
+                    "maximum": 45
+                  },
+                  {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90
+                  },
+                  {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90
+                  },
+                  {
+                    "type": "number",
+                    "minimum": -180,
+                    "maximum": 180
+                  }
+                ],
+                "description": "joint angles J1..J6 in degrees (J1 base, J6 flange)"
+              },
+              "maxItems": 10
+            }
+          }
+        },
+        "example": {
+          "schema": "roaas-task/1",
+          "robot": "dobot_cr3a",
+          "task": "joint_waypoints",
+          "order_id": "my-order-0001",
+          "nonce": "<32 random lowercase hex characters, new for every order>",
+          "issued_at_utc": "<now, e.g. 2026-11-26T10:00:00Z>",
+          "params": {
+            "speed_factor": 30,
+            "waypoints": [
+              [
+                12.5,
+                -15.0,
+                25.0,
+                30.0,
+                -40.0,
+                45.0
+              ],
+              [
+                -10.0,
+                18.0,
+                -20.0,
+                -50.0,
+                35.0,
+                -90.0
+              ]
+            ]
+          }
+        }
+      },
+      "limits": {
+        "robot_model": "DOBOT CR3A",
+        "controller_firmware": "4.5.1.1",
+        "home_deg": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_speed_factor": 100,
+        "allowed_envelope_deg": [
+          [
+            -20,
+            20
+          ],
+          [
+            -30,
+            30
+          ],
+          [
+            -45,
+            45
+          ],
+          [
+            -90,
+            90
+          ],
+          [
+            -90,
+            90
+          ],
+          [
+            -180,
+            180
+          ]
+        ],
+        "motion": "MovJ (joint interpolation) home -> waypoints -> home, stop at every point",
+        "suggested_speed_factor": 30,
+        "note": "Any combination of joint values inside this envelope is allowed. The envelope and the speed limit may be widened later by the lab."
+      },
+      "duration": "Motion time per segment is about |dq|/(vmax x speed) of the slowest joint plus 0.32 s (calibrated on the real arm). Orders whose estimated recording exceeds 600 s are refused at quote time.",
+      "deliverable": {
+        "format": "roaas-episode/1",
+        "media_type": "application/json",
+        "contents": "signed manifest (text + object), signature, public key, order text, integer preview series, link and key to the full encrypted 125 Hz telemetry"
+      },
+      "checks": "deterministic only: see the deal template (template.json)",
+      "price": {
+        "token": "PLACEHOLDER: Crow Test USDC token address on Sepolia",
+        "formula": "base + per_waypoint x waypoints",
+        "amounts_base_units": {
+          "base": "PLACEHOLDER",
+          "per_waypoint": "PLACEHOLDER"
+        }
+      },
+      "deliver_within_sec": 259200,
+      "how_to_order": {
+        "scope": {
+          "task": "joint_waypoints",
+          "orderText": "<the order, compact JSON>",
+          "nonce": "<the order's nonce>",
+          "orderSha256": "<sha256 of orderText>"
+        },
+        "validate_first": "https://PLACEHOLDER.vercel.app/api/validate",
+        "fingerprint": "sent by the lab out of band; it is pinned in every deal's signature check"
+      }
+    },
+    {
+      "id": "dobot_cr3a/repeatability",
+      "robot": {
+        "id": "dobot_cr3a",
+        "model": "DOBOT CR3A",
+        "controller_firmware": "4.5.1.1"
+      },
+      "task": "repeatability",
+      "summary": "the same path of 1 to 5 waypoints N times, back home after each repetition; 125 Hz controller telemetry, signed",
+      "order": {
+        "schema": "roaas-task/1",
+        "params_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "speed_factor",
+            "waypoints",
+            "repetitions"
+          ],
+          "properties": {
+            "speed_factor": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "description": "global speed in percent; 30 suggested"
+            },
+            "waypoints": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "array",
+                "minItems": 6,
+                "maxItems": 6,
+                "prefixItems": [
+                  {
+                    "type": "number",
+                    "minimum": -20,
+                    "maximum": 20
+                  },
+                  {
+                    "type": "number",
+                    "minimum": -30,
+                    "maximum": 30
+                  },
+                  {
+                    "type": "number",
+                    "minimum": -45,
+                    "maximum": 45
+                  },
+                  {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90
+                  },
+                  {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90
+                  },
+                  {
+                    "type": "number",
+                    "minimum": -180,
+                    "maximum": 180
+                  }
+                ],
+                "description": "joint angles J1..J6 in degrees (J1 base, J6 flange)"
+              },
+              "maxItems": 5
+            },
+            "repetitions": {
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 10
+            }
+          }
+        },
+        "example": {
+          "schema": "roaas-task/1",
+          "robot": "dobot_cr3a",
+          "task": "repeatability",
+          "order_id": "my-order-0001",
+          "nonce": "<32 random lowercase hex characters, new for every order>",
+          "issued_at_utc": "<now, e.g. 2026-11-26T10:00:00Z>",
+          "params": {
+            "speed_factor": 30,
+            "waypoints": [
+              [
+                12.5,
+                -15.0,
+                25.0,
+                30.0,
+                -40.0,
+                45.0
+              ]
+            ],
+            "repetitions": 5
+          }
+        }
+      },
+      "limits": {
+        "robot_model": "DOBOT CR3A",
+        "controller_firmware": "4.5.1.1",
+        "home_deg": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "max_speed_factor": 100,
+        "allowed_envelope_deg": [
+          [
+            -20,
+            20
+          ],
+          [
+            -30,
+            30
+          ],
+          [
+            -45,
+            45
+          ],
+          [
+            -90,
+            90
+          ],
+          [
+            -90,
+            90
+          ],
+          [
+            -180,
+            180
+          ]
+        ],
+        "motion": "MovJ (joint interpolation) home -> waypoints -> home, stop at every point",
+        "suggested_speed_factor": 30,
+        "note": "Any combination of joint values inside this envelope is allowed. The envelope and the speed limit may be widened later by the lab."
+      },
+      "duration": "Motion time per segment is about |dq|/(vmax x speed) of the slowest joint plus 0.32 s (calibrated on the real arm). Orders whose estimated recording exceeds 600 s are refused at quote time.",
+      "deliverable": {
+        "format": "roaas-episode/1",
+        "media_type": "application/json",
+        "contents": "signed manifest (text + object), signature, public key, order text, integer preview series, link and key to the full encrypted 125 Hz telemetry"
+      },
+      "checks": "deterministic only: see the deal template (template.json)",
+      "price": {
+        "token": "PLACEHOLDER: Crow Test USDC token address on Sepolia",
+        "formula": "base + per_waypoint x waypoints x repetitions",
+        "amounts_base_units": {
+          "base": "PLACEHOLDER",
+          "per_waypoint": "PLACEHOLDER"
+        }
+      },
+      "deliver_within_sec": 259200,
+      "how_to_order": {
+        "scope": {
+          "task": "repeatability",
+          "orderText": "<the order, compact JSON>",
+          "nonce": "<the order's nonce>",
+          "orderSha256": "<sha256 of orderText>"
+        },
+        "validate_first": "https://PLACEHOLDER.vercel.app/api/validate",
+        "fingerprint": "sent by the lab out of band; it is pinned in every deal's signature check"
+      }
+    }
+  ]
+}
