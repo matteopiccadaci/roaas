@@ -119,3 +119,14 @@ Status values: `open`, `asked`, `answered`, `dropped`.
 - **Status:** open
 - **Answer:**
 - **Date:**
+
+## Q12. Telling a real arm from the simulator
+
+- **Question:** The pilot bridge's checks read `recorder.target_host` and refuse a simulator address
+  (`127.0.0.1`, `localhost`, `::1`). ROaaS manifest 0.6 removed `target_host` for privacy (D7). Should we keep
+  it (a private LAN address such as `192.168.5.1` reveals little), or replace it with an explicit signed
+  field such as `recorder.simulator: false`?
+- **Why:** It decides whether ROaaS deliveries can pass the same check as the pilot.
+- **Status:** open
+- **Answer:**
+- **Date:**
