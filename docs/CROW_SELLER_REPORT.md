@@ -205,10 +205,40 @@ The kit v0.4.4 was run against `fake_dobot.py` on macOS. All four episodes were 
 | 10 waypoints, 10% | 84.8 s | 2 688 KB | 1 030 KB | **1 373 KB: does not fit** |
 
 That is about 32 KB/s for plain CSV and 16.5 KB/s for gz + base64. So 1 MiB holds about **30 s of plain
-CSV, or about 60 s of gz + base64**. The fake robot's data may compress better than real data; this needs
-re-measuring on a real CR3A recording. Note also that `episode.py` aborts a motion after 90 s (`--timeout`).
+CSV, or about 60 s of gz + base64**. Note also that `episode.py` aborts a motion after 90 s (`--timeout`).
 
-How to remove the duration limit is an open decision; the proposal is in the chat of 2026-11-25.
+### Real CR3A, 2026-11-25
+
+Two deliveries of `example_order.json` were recorded on the lab mini PC. Both are VALID with the v0.4.5
+verifier.
+
+- `…T095235Z` was recorded against **`fake_dobot.py` on the mini PC** (`target_host` 127.0.0.1).
+- `…T095830Z` is the **real robot over Ethernet** (`192.168.5.1`).
+
+| Measure | Fake (mini PC) | Real CR3A (Ethernet) |
+|---|---|---|
+| Resyncs, dropped frames, gaps over 16 ms | 0 / 0 / 0 | **0 / 0 / 0**, max period 13 ms |
+| Motion time for the same order | 14.5 s | **8.9 s**: the real arm is faster than the fake model |
+| Idle before the first motion | 1.5 s | **9.3 s**: the recorder runs while the operator types `ENABLE`; the arm was already enabled (mode 5) at start |
+| Worst arrival error at a waypoint | 0.002° | **0.025–0.035°** |
+| PC minus controller clock | 1.7 ms | **25 226 s ≈ 7 h** (known offset) |
+| CSV gz + base64 while moving | 16.8 KB/s (1 MiB ≈ 60 s) | **13.2 KB/s (1 MiB ≈ 76 s)** |
+| Int-delta + xz + base64 while moving (option B) | 3.7 KB/s | **3.8 KB/s (1 MiB ≈ 4.4 min at 125 Hz)** |
+
+The **plain-JSON preview** is the part that Crow's checks can actually read. Measured on the real episode:
+
+| Rate | Time `t` plus positions `q` | Time, positions and speeds `qd` |
+|---|---|---|
+| 125 Hz | 5.2 KB/s (1 MiB ≈ 3 min) | 9.9 KB/s (1 MiB ≈ 1.6 min) |
+| 50 Hz | 2.6 KB/s | 5.0 KB/s |
+| 25 Hz | 1.0 KB/s (1 MiB ≈ 15 min) | 2.0 KB/s (1 MiB ≈ 8 min) |
+| 10 Hz | 0.4 KB/s | 0.8 KB/s |
+
+The manifests still carry `recorder.target_host`, `host_os` (Windows 10 build 19045) and the Python
+version (3.14.10). They are to be removed under decision D7. `calibration_date` is still the placeholder
+`TO-ASK-THE-LAB`.
+
+Resolution: option A, a two-level delivery (decision D14).
 
 ## 9. Differences from the brief
 

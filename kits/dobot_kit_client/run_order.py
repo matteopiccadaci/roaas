@@ -58,6 +58,9 @@ def main():
     ep = new[-1]
     if rc != 0:
         print(f"[run] the run did not complete (exit code {rc}); episode kept for diagnosis: {ep}")
+    if not (ep / "manifest.json").exists():
+        sys.exit("[run] no manifest was written (the recorder never started?): nothing to verify or deliver.\n"
+                 "      Is the robot (or fake_dobot.py) reachable at the given --host?")
 
     print("\n[verify]")
     vrc = subprocess.call([sys.executable, str(HERE / "verify_episode.py"), str(ep), "--order", args.order])

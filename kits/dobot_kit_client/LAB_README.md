@@ -1,4 +1,4 @@
-# Dobot CR3A episode kit — v0.4.4
+# Dobot CR3A episode kit — v0.4.5
 
 Run a short scripted motion on a DOBOT CR3A, record the controller's real-time feedback at 125 Hz,
 sign the result, and let the buyer verify it independently.
@@ -73,6 +73,10 @@ prints after every run (`signer key sha256`).
 | `summary.py`, `inspect_raw.py` | lab | Episode summary; state-by-state diagnosis of `raw.bin` |
 
 ## Controller notes (CR3A, firmware 4.5.1.1)
+
+- Wired setup in use: controller port **LAN1** = `192.168.5.1`; robot PC Ethernet `192.168.5.100/24`
+  with **no gateway and no DNS** (internet over the PC's Wi-Fi). The controller also answers on
+  `192.168.201.1` (its Wi-Fi network). Use `--host 192.168.5.1`.
 
 - `RequestControl()` does not exist (returns `-10000`): select TCP mode in DobotStudio Pro instead.
   In online mode the dashboard (29999) does not answer; port 30004 streams in both modes.

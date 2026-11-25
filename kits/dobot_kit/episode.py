@@ -40,7 +40,7 @@ import dobot_proto as dp
 import orders
 import signers
 
-KIT_VERSION = "0.4.4"
+KIT_VERSION = "0.4.5"
 CSV_FIELDS = (["t_controller_ms", "t_pc_ns", "robot_mode", "speed_scaling"]
               + [f"q{j}" for j in range(1, 7)] + [f"qd{j}" for j in range(1, 7)]
               + [f"i{j}" for j in range(1, 7)] + ["x", "y", "z", "rx", "ry", "rz"])

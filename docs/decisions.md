@@ -78,7 +78,9 @@ fallback, and manual orders can enter the same queue (`--manual`) so that the ro
 
 - **The Crow delivery (at most 1 MiB)** holds:
   - the signed manifest and a summary (status, arrivals at each waypoint, violations);
-  - a telemetry preview, downsampled just enough to fit (125 Hz up to about 60 s, then lower rates);
+  - a telemetry preview in **plain JSON**, so that the checks can read it: time, positions and speeds,
+    downsampled just enough to fit. Measured on the real CR3A: at 125 Hz the preview fits about 1.6 min,
+    at 25 Hz about 8 min;
   - a link, a random decryption key and the SHA-256 of the full 125 Hz telemetry.
 - **The full telemetry** is stored encrypted by us (Vercel Blob). The buyer gets the key only when the deal
   is released, and the hash is already in the signed manifest.
@@ -88,5 +90,11 @@ fallback, and manual orders can enter the same queue (`--manual`) so that the ro
   - a more compact encoding (option B) is a later optimisation;
   - a larger limit is asked of Crow (`questions-for-crow.md`, Q3);
   - the kit's fixed 90 s motion timeout becomes derived from the estimated duration.
+
+**D15. Wired robot link in place (kit v0.4.5).**
+- The controller's LAN1 is `192.168.5.1`.
+- The mini PC's Ethernet is `192.168.5.100/24`, with no gateway and no DNS; internet goes over the PC's
+  Wi-Fi.
+- The first real recording over the cable has no resyncs and no gaps (`CROW_SELLER_REPORT.md`, section 8).
 
 Open questions for Crow are tracked in `questions-for-crow.md`.

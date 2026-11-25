@@ -7,11 +7,14 @@ we run it and send you back a signed zip.
 If you work with an AI assistant, give it this folder: this guide, `ORDER_FORMAT.md` and `SECURITY.md`
 describe everything.
 
+**Where to send orders:** email the order file to **mapiccadaci@unime.it** (details in step 5).
+
 ## Current status
 
 | Item | Now |
 |---|---|
-| Signing key | **Software key (interim)**. A TPM-backed key is implemented and will be used once a PC dedicated to the robot is installed; we will tell you, and send the new key fingerprint |
+| Recording setup | a PC dedicated to the robot, wired Ethernet to the controller (125 Hz stream, no Wi-Fi drops) |
+| Signing key | **Software key (interim)**, generated on the dedicated robot PC. Its fingerprint is sent to you separately. A hardware-backed key (TPM or security token) will follow; we will tell you and send the new fingerprint |
 | Speed | any value from 1 to **100%**; we suggest **30%** as a cautious default. It is set per order (`speed_factor`), so you can change it from one order to the next |
 | Allowed joint range | see `lab_limits_cr3a.json`; any combination inside it is allowed |
 | One order | = one recorded run: home → your waypoints → home |
@@ -87,8 +90,9 @@ It must print `Order ... OK`. It applies exactly the checks we apply before runn
 
 ## 5. Send it
 
-Email the `.json` file, as an attachment, to your contact at the lab. One file per order; several orders
-can be sent at once if each has its own `order_id` and nonce.
+Email the `.json` file **as an attachment** to **mapiccadaci@unime.it**, with subject
+`Robot order <order_id>`. One file per order; several orders can go in the same email if each has its own
+`order_id` and nonce. Do not paste the JSON into the email body: we execute the attached file byte for byte.
 
 **Keep your copy of the file exactly as sent**: verification compares its bytes with what we executed.
 

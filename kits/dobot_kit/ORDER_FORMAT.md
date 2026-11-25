@@ -9,10 +9,12 @@ random code (the *nonce*); nobody can know them in advance, so the recording tha
  BUYER                                          LAB
  1. make_order.py / write the JSON by hand
  2. check_order.py  (same checks as the lab)
- 3. send the order file  ───────────────────▶   4. run_order.py: validate, run on the robot,
+ 3. email the order file ──────────────────▶   4. run_order.py: validate, run on the robot,
                                                    record, sign, verify, package
  6. verify_episode.py --order --fingerprint ◀── 5. delivery zip
 ```
+
+Orders go by email, as an attachment, to **mapiccadaci@unime.it** (subject `Robot order <order_id>`).
 
 ## Fields
 

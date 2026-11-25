@@ -1,7 +1,7 @@
 # Security design: signatures, keys, TPM
 
-**Status:** deliveries are currently signed with a software key (interim). The TPM-backed signer is
-implemented and will be activated on a PC dedicated to the robot (see section 4).
+**Status:** deliveries are recorded on a PC dedicated to the robot, wired to the controller, and signed
+with a software key (interim). A hardware-backed key (TPM 2.0 or a security token) will follow (see section 4).
 
 This document describes exactly what the kit protects, how, and what it does **not** protect yet.
 
@@ -62,13 +62,13 @@ the buyer cannot yet check cryptographically that the key really is inside a TPM
 
 ### Software key (current interim setting)
 
-Until a PC dedicated to the robot is in place, the lab signs with `--signer software`: the private key is
+For now the lab signs with `--signer software` on its dedicated robot PC: the private key is
 a PEM file (`keys/recorder_key.pem`) kept by the lab. The cryptography and the verification are identical,
 and the manifest says `signer.type = "software"`, but the key is not hardware-protected: anyone who
 obtained a copy of the file could sign. The key fingerprint is pinned in the same way (section 3).
 
-When the dedicated PC is installed, the lab will create the TPM key there and send the buyer the new
-fingerprint through a separate channel; from then on deliveries carry `signer.type = "windows-tpm"`.
+When a hardware-backed key is in place, the lab will send the buyer the new fingerprint through a
+separate channel, and the manifest's `signer.type` will say which kind of key signed.
 
 ## 5. Freshness: "this recording is new"
 
