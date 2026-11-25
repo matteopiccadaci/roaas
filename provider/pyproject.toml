@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "roaas"
+version = "0.1.0"
+description = "ROaaS: robot-agnostic provider of recorded robot work, settled through Crow (testnet)"
+requires-python = ">=3.9"
+dependencies = ["cryptography>=41"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.scripts]
+roaas = "roaas.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["roaas*"]
+
+[tool.setuptools.package-data]
+"roaas.robots.dobot_cr3a" = ["public_limits.json"]
+"roaas.robots.dobot_cr3a.kit" = ["*.ps1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["robot: needs the fake CR3A controller (real-time, a few seconds each)"]

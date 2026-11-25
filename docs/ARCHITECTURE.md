@@ -287,7 +287,7 @@ check (ADR-0045):
   "manifest": { "...": "object, equal to manifest_text parsed" },
   "manifest_text": "<the exact signed bytes, canonical JSON>",
   "manifest_sig": "<base64 DER ECDSA P-256 signature>",
-  "pubkey_pem": "-----BEGIN PUBLIC KEY-----\n...",
+  "pubkey_spki_b64": "<base64 DER SubjectPublicKeyInfo>",
   "order_text": "<the exact order string the buyer sent>",
   "preview": {
     "rate_hz": 25,
@@ -322,7 +322,7 @@ check (ADR-0045):
 | 1 | `format` | `json_schema` | Required top-level fields, `format` const, no extra fields |
 | 2 | `order` | `json_schema` | `order_text` const `"{{order}}"`: exactly the buyer's order |
 | 3 | `status` | `json_schema` | `manifest.status` = `completed`; spec and continuity violations = 0 |
-| 4 | `signer-key` | `json_schema` | `manifest.signer.pubkey_sha256` const = the pinned fingerprint; `manifest_sig` and `pubkey_pem` patterns |
+| 4 | `signer-key` | `json_schema` | `manifest.signer.pubkey_sha256` const = the pinned fingerprint; `manifest_sig` and `pubkey_spki_b64` patterns |
 | 5 | `arrivals` | `json_schema` | Every `max_error_deg` ≤ 1; at least 3 points (home, ≥ 1 waypoint, home) |
 | 6 | `envelope` | `json_schema` | Every value of `preview.q1…q6` inside the lab envelope ± 1° (integer bounds per joint) |
 | 7 | `speeds` | `json_schema` | Every value of `preview.qd1…qd6` within the datasheet limits |
@@ -331,7 +331,10 @@ check (ADR-0045):
 | 10 | `hidden` | `hidden_characters_max` | Total 0 |
 
 When Crow ships `signature_valid`, check 4 becomes:
-`{alg: ecdsa-p256-sha256, publicKey: {pointer: /pubkey_pem, spkiSha256: <pinned>}, message: {pointer: /manifest_text, jsonEquals: /manifest}, signature: {pointer: /manifest_sig, format: der}}`.
+`{alg: ecdsa-p256-sha256, publicKey: {pointer: /pubkey_spki_b64, format: spki-base64, spkiSha256: <pinned>}, message: {pointer: /manifest_text, jsonEquals: /manifest}, signature: {pointer: /manifest_sig, format: der}}`.
+
+The key travels as base64 SPKI rather than PEM, so the document contains no newline anywhere: the `hidden`
+check cannot trip on it.
 
 **What the checks prove, and what they do not:**
 
@@ -378,7 +381,7 @@ because nothing was delivered yet.
   - the buyer is within its rate limit (placeholder);
   - the estimated duration is at most the maximum job duration (placeholder 10 min).
 - **`deliverWithinSec`:** placeholder 72 h while approval is on site; the estimate plus a margin once the
-  policy is `auto`.
+  policy is `auto`. In every case it must be **above 7200 s**: the operators refuse 7200 s or less (D18).
 - **Motion timeout:** the estimate × 1.5 + 30 s, instead of the fixed 90 s.
 - **Duration estimate:** a trapezoidal profile per joint, from the datasheet speeds scaled by
   `speed_factor`, calibrated on real recordings. Reference: the real arm runs the example order in 8.9 s at

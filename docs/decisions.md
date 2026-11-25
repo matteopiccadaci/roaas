@@ -111,4 +111,23 @@ arm was already enabled (mode 5) before the operator confirmed.
 - If DobotStudio Pro allows it, set the controller clock, which is about 7 h off.
 - Neither blocks the work: absolute time comes from the PC's NTP clock.
 
+**D18. Crow's one-run pilot coexists with ROaaS.** Rafa's setup page "Sell one robot run through Crow"
+describes a pilot run entirely on the robot PC:
+- `crow_bridge.py` on 127.0.0.1:8790;
+- Crow's `serve.mjs` adapter on 127.0.0.1:8791;
+- the offer is made by the seller, with Crow's order and Crow's buyer agent, and coordinated with Rafa on
+  Telegram;
+- the telemetry is gzipped inside one JSON file of at most 1 MiB.
+
+It uses the same kit, the same rules (the arm moves only once the payment is locked, and only after the
+operator's `ENABLE`) and the same kind of signed bundle, so it is a valid first step. ROaaS generalises it
+into an always-on service: a Vercel job API, a hosted adapter, an outbound-only lab agent and two-level
+deliveries.
+
+To keep the pilot intact, ROaaS never edits the kit on the robot PC (`C:\dobot_kit`): its code lives in
+`provider/`.
+
+Fact learnt from the page: the operators refuse `deliverWithinSec` ≤ 7200 s (`fundBy < deliverBy`), so
+every deal's delivery window must exceed 2 h, even in `auto` mode.
+
 Open questions for Crow are tracked in `questions-for-crow.md`.
