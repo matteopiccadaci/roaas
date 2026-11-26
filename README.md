@@ -25,7 +25,7 @@ plug in later as adapters, without changing the core.
 | `docs/CROW_SELLER_REPORT.md` | How Crow's seller side works and what it means for this project |
 | `docs/decisions.md` | Decision log |
 | `docs/questions-for-crow.md` | Open questions for the Crow team, with their answers |
-| `docs/setup/` | Setup: lab mini PC network, Cloudflare deploy and lab agent (`cloudflare.md`) |
+| `docs/setup/` | Setup: lab mini PC network, Cloudflare deploy and lab agent (`cloudflare.md`), brief for the mini PC's coding agent (`minipc-agent-brief.md`) |
 
 ## Safety rules
 
