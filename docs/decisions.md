@@ -172,4 +172,41 @@ Worker on the free plan, with one SQLite Durable Object per robot.
   while the operator is on duty.
 - **No web page for now:** the CLI covers the routine (docs/OPERATOR.md).
 
+## 2026-11-26
+
+**D22. The lab agent gets the pilot bridge's safety guards.** The mini PC passed the read-only checks, the test
+suite (first run on Windows) and the rehearsal on the fake robot (`docs/setup/minipc-agent-brief.md`, parts 1
+and 3). Compared with what Crow's pilot bridge does on the same PC, the agent lacked five guards. Now:
+
+- **Type-ahead is discarded** before the approval prompt (`msvcrt` on Windows, `termios` elsewhere): nothing
+  typed earlier can answer it. To try by hand on the mini PC.
+- **The recorder starts only after approval:** a test now proves it (no episode folder while the operator is
+  asked; the first sample is later than the answer).
+- **The deal's own checks run in the lab before upload** (`roaas.settlement.crow_checks`): json_schema (Crow's
+  subset), signature_valid, equal_lengths, monotonic_column, hidden_characters_max. A delivery Crow would refuse
+  ends as a failed job that can be retried, instead of a lost order. On six deliveries (good, production terms
+  on the simulator, edited manifest, re-signed bad previews, a hidden character) the verdicts equal those of
+  Crow's `check-delivery.ts`, check by check. A kind the lab does not run fails closed: before adding
+  `passes_through` (Q11) to the templates, port it too.
+- **The terms come from Crow, not from our cloud:** the agent reads them from the operators, declines a deal
+  whose terms do not name the order, and declines rehearsal terms on the real robot or production terms on the
+  simulator. `--live` is refused on `127.0.0.1`. Record-only runs do not exist in ROaaS (the manifest says
+  `record_only: false`, and the templates check it).
+- **The deadline is checked again after `ENABLE`** (600 s margin plus the estimate), before anything starts.
+- **A run cut by a crash becomes `failed`** ("interrupted") when the agent reconnects without it in hand, and is
+  never sent again by itself; only `roaas ops retry` does. Before, the Durable Object re-sent `running` and
+  `failed` jobs to every new connection.
+
+Verified: 76 tests on Python 3.10 (with the local Worker and Crow's code), 67 on 3.9 and 3.14, and a full deal
+on Crow's local simulator, Released, with the agent reading the terms from the simulated operators.
+
+**D23. Worker deployed on Cloudflare** (`https://roaas.roaas-cloud.workers.dev`, the account's own workers.dev
+subdomain, chosen by wrangler at the first deploy). Secrets `ADAPTER_KEY` and `LAB_TOKEN` are uploaded with the
+deploy; the Worker refuses every protected route while they are missing. Checked from the Mac: protected routes
+answer 401 without the key or token, and an agent with the fake robot, off duty, shows as online in
+`roaas ops status`. Found on the way: Cloudflare refuses Python's default User-Agent (403, error 1010) on our
+Worker **and on Crow's API**, so every request of the `roaas` package now names itself. `crow/` is rebuilt with
+the real URL and the Crow Test USDC address; the prices are still placeholders, so quotes fail until they are
+set.
+
 Open questions for Crow are tracked in `questions-for-crow.md`.

@@ -75,10 +75,17 @@ def cloud(tmp_path_factory):
 @pytest.fixture(scope="module")
 def agent(cloud, fake_robot, robot_info, signer, tmp_path_factory):
     from roaas.agent.agent import LabAgent
+    from roaas.robots import get_adapter
+    from roaas.robots.dobot_cr3a.kit import signers
+    from roaas.settlement import crow_terms as ct
+    fp = signers.fingerprint(signer.public_key())
+    # Crow is not running here: the deal's terms are the rehearsal terms filled for the job's order, as an operator
+    # would serve them.
+    fetch = lambda job: ct.terms_for(ct.template(get_adapter("dobot_cr3a"), fp, rehearsal=True), job["scope"])  # noqa: E731
     lines = []
     a = LabAgent(cloud=cloud, token=LAB_TOKEN, robot_info=robot_info, host="127.0.0.1",
                  approval=approval.SimulatorOnly(), signer=signer, out_dir=tmp_path_factory.mktemp("agent-episodes"),
-                 log=lines.append, **fake_robot.ports)
+                 log=lines.append, fetch_terms=fetch, **fake_robot.ports)
     th = threading.Thread(target=a.run, daemon=True)
     th.start()
     t0 = time.time()
@@ -212,3 +219,46 @@ def test_lab_offline_means_no_quotes_and_jobs_wait(cloud, agent):
     assert code == 200 and json.loads(body)["pushed"] is False                       # nobody connected
     assert {j["id"]: j["state"] for j in json.loads(lab_call(cloud, "GET", "/api/lab/jobs")[1])}[job] == "started"
     assert call(cloud, "GET", f"/api/crow/jobs/{job}/result")[0] == 202
+
+
+def test_a_run_cut_by_a_crash_fails_and_is_never_resent(cloud, agent):
+    """After the previous test the real agent is gone and one job waits ('started'). A stand-in agent drives it to
+    'running', then disconnects as a crash would. Reconnecting with that job in hand keeps it; a fresh agent (a
+    restart) turns it into 'failed' and is not sent it again; only `roaas ops retry` sends it."""
+    from websockets.sync.client import connect
+    jobs = lambda: {j["commitment_id"]: j for j in json.loads(lab_call(cloud, "GET", "/api/lab/jobs")[1])}  # noqa: E731
+    jid = jobs()["0x" + "d2" * 32]["id"]
+    ws_url = cloud.replace("http://", "ws://") + "/api/lab/ws"
+    auth = {"Authorization": f"Bearer {LAB_TOKEN}"}
+    status = {"robot": "dobot_cr3a", "ready": True, "on_duty": True, "busy": False, "job_id": None}
+
+    def pushed(ws, seconds=2.0):
+        got, t0 = [], time.time()
+        while time.time() - t0 < seconds:
+            try:
+                m = json.loads(ws.recv(timeout=0.3))
+            except TimeoutError:
+                continue
+            if m.get("type") == "job":
+                got.append(m["job"]["id"])
+        return got
+
+    with connect(ws_url, additional_headers=auth) as ws:
+        ws.send(json.dumps({"type": "hello", "status": status}))
+        assert jid in pushed(ws)                                   # never approved: sent again on connect
+        for st in ("claimed", "awaiting_approval", "running"):
+            ws.send(json.dumps({"type": "job_event", "job_id": jid, "state": st}))
+        time.sleep(0.5)
+        assert jobs()["0x" + "d2" * 32]["state"] == "running"
+    with connect(ws_url, additional_headers=auth) as ws:           # same agent, connection blip mid-run
+        ws.send(json.dumps({"type": "hello", "status": dict(status, busy=True, job_id=jid)}))
+        assert jid not in pushed(ws)
+        assert jobs()["0x" + "d2" * 32]["state"] == "running"
+    with connect(ws_url, additional_headers=auth) as ws:           # a restarted agent: nothing in hand
+        ws.send(json.dumps({"type": "hello", "status": status}))
+        assert jid not in pushed(ws)
+        j = jobs()["0x" + "d2" * 32]
+        assert j["state"] == "failed" and j["detail"].startswith("interrupted"), j
+        code, body = lab_call(cloud, "POST", f"/api/lab/jobs/{jid}/retry", {})
+        assert code == 200 and json.loads(body)["pushed"] is True
+        assert jid in pushed(ws)                                   # only the operator's retry sends it again

@@ -98,7 +98,7 @@ roaas/
       fake/                in-process simulator for tests
     signers/               software, windows_tpm (existing); later linux_tpm, piv
     agent/                 lab agent loop, approval policies, cloud client (stdlib HTTP)
-    settlement/            crow (via the job API), manual (today's email and zip flow)
+    settlement/            crow terms and the deal's checks run in the lab (crow_terms, crow_checks), manual (email and zip)
     cli.py                 roaas status | open | close | pause | queue | approve | submit --manual | offers build
   provider/tests/          pytest; the fake controller on random ports
   cloud/                   Cloudflare Worker (TypeScript): job API, Durable Object `Lab`, static site in cloud/public
@@ -156,19 +156,31 @@ token in the `ROAAS_LAB_TOKEN` environment variable.
 
 - **One outbound WebSocket** to `/api/lab/ws`, with a bearer token. It reconnects with backoff. Messages:
   - cloud → lab: `validate {id, order_text}`, `job {job}`;
-  - lab → cloud: `hello`/`status {ready, reason, on_duty, busy}` (status every 10 s, from a read-only
+  - lab → cloud: `hello`/`status {ready, reason, on_duty, busy, job_id}` (status every 10 s, from a read-only
     `probe()`), `validate_result`, `job_event {state}`.
 - **Ready** (D16) means: the dashboard answers (TCP mode, DobotStudio Pro not holding the robot), the robot is
   in mode 4 (disabled), and there are no alarms.
 - **For each job:**
   1. re-validate against the public **and** the local limits;
-  2. check the deadline: the estimate plus 10 min must end before `deliverBy`;
-  3. approval: on site, `ENABLE` typed at the console;
-  4. run;
-  5. verify;
-  6. build `roaas-episode/1`;
-  7. `PUT /api/lab/jobs/<id>/telemetry`, then `PUT …/episode`.
-- **One robot lock:** the status probe never touches the dashboard while a job runs.
+  2. read the deal's terms **from Crow's operators** (`GET /v1/commitments/<id>/terms`, every operator that
+     answers must agree), not from the cloud. Decline the job if the terms do not name this order
+     (`orderSha256`), or do not suit the robot this agent drives: rehearsal terms need the simulator, production
+     terms the real robot (`--live` is refused on `127.0.0.1`);
+  3. check the deadline: the estimate plus 10 min must end before `deliverBy`;
+  4. approval: on site, `ENABLE <code>` typed at the console. Keys typed before the prompt appeared are
+     discarded;
+  5. check the deadline **again**, since the operator may answer hours later; only then start the recorder;
+  6. run;
+  7. verify the episode;
+  8. build `roaas-episode/1` and run **the deal's own checks** on it (`roaas.settlement.crow_checks`, a port of
+     the kinds our templates use, compared with Crow's code in the tests). A delivery Crow would refuse is not
+     uploaded: the job fails and can be retried, and the order is not used up;
+  9. `PUT /api/lab/jobs/<id>/telemetry`, then `PUT …/episode`.
+- **One robot lock and one worker:** one job at a time, and the status probe never touches the dashboard while
+  a job runs.
+- **Crash or restart:** the agent's `hello` names the job in hand (`job_id`). The Durable Object turns any
+  other `running` job into `failed` ("interrupted"), and on reconnect it sends again only jobs that never
+  reached the robot. An interrupted job runs again only on `roaas ops retry`.
 - **Dependencies:** `cryptography` and `websockets`.
 
 ### 3.4 Job API (Cloudflare Worker + Durable Object)
@@ -361,7 +373,7 @@ stateDiagram-v2
   awaiting_approval --> running: ENABLE
   awaiting_approval --> declined: operator declines
   running --> packaged: verified, uploaded
-  running --> failed: aborted or invalid
+  running --> failed: aborted, invalid, refused by the deal's checks, or interrupted by a crash
   failed --> awaiting_approval: retry before the deadline
   packaged --> delivered: adapter fetched the result
   delivered --> closed: Released or Refunded
@@ -457,7 +469,7 @@ a fallback (D10).
 |---|---|---|
 | 3 ✅ | `roaas` core and `dobot_cr3a` adapter wrapping the kit: approval callback, recorder after approval, manifest 0.6, estimate, preview, two-level packaging; `fake` robot; manual path | pytest green against the fake controller; a v0.6 episode verifies; tampering is detected |
 | 4 ✅ | Offer and check generator; the two templates | Generated deliveries pass Crow's `check-delivery.ts`, and tampered ones fail |
-| 5 🟡 | Job API on Cloudflare, lab agent, end to end in Crow's local simulation ✅ (Released, 2026-11-25), then Sepolia with the hosted adapter | One deal Released on testnet |
+| 5 🟡 | Job API on Cloudflare, lab agent, end to end in Crow's local simulation ✅ (Released, 2026-11-25; again with the lab-side safety guards of D22, 2026-11-26), then Sepolia with the hosted adapter | One deal Released on testnet |
 | 6 ✅ | Operator CLI (`roaas ops status`, `queue`, `open`, `close`, `pause`, `resume`, `retry`, `decline`), per-job approval code, emails | The operator can run a day of jobs from the CLI |
 | 7 | Docs: provider setup (Windows, Linux), adding a robot, offer authoring, buyer guide for Crow | — |
 | 8 | One real testnet job on the CR3A, with the operator present | Released, and the buyer's offline verification passes |
@@ -465,6 +477,7 @@ a fallback (D10).
 ## 11. Open points
 
 - Answers to Q1, Q2, Q3, Q5 and Q11 may simplify section 4.
-- Cloudflare: deploy from the lab's own account (`docs/setup/cloudflare.md`).
+- Cloudflare: deployed from the lab's own account on 2026-11-26, `https://roaas.roaas-cloud.workers.dev`
+  (`docs/setup/cloudflare.md`).
 - Prices, deadlines, maximum queue length, retention days and maximum job duration are placeholders, set in
   `pricing.yaml` and `limits`.

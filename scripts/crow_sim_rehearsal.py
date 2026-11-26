@@ -22,7 +22,8 @@ import sys
 import time
 from pathlib import Path
 
-CROW, REPO, WORK, PY = map(Path, sys.argv[1:5])
+CROW, REPO, WORK = (Path(a).resolve() for a in sys.argv[1:4])
+PY = Path(sys.argv[4])                                  # the interpreter as given (a venv's python is a symlink)
 WORK.mkdir(parents=True, exist_ok=True)
 KIT = REPO / "kits" / "dobot_kit"
 ADAPTER_KEY, LAB_TOKEN = "sim-adapter-key-123", "sim-lab-token-456"
@@ -66,8 +67,11 @@ def stop_all():
     for name, p in reversed(procs):
         try:
             os.killpg(p.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+        except (ProcessLookupError, PermissionError):      # already gone (macOS answers EPERM for a dead group)
+            try:
+                p.terminate()
+            except ProcessLookupError:
+                pass
 
 
 try:
@@ -101,7 +105,7 @@ try:
 
     start("agent", [str(PY), "-m", "roaas.cli", "agent", "--cloud", "http://127.0.0.1:8799", "--robot-info",
                     str(KIT / "lab_limits_cr3a.json"), "--dashboard-port", "39997", "--feedback-port", "39002",
-                    "--keys-dir", str(WORK / "keys"), "--out", str(WORK / "episodes")], WORK,
+                    "--keys-dir", str(WORK / "keys"), "--out", str(WORK / "episodes"), "--crow-operators", OPS], WORK,
           {**env_py, "ROAAS_LAB_TOKEN": LAB_TOKEN, "PYTHONUNBUFFERED": "1"})
     wait_log("agent", r"connected to")
     print("[e2e] lab agent connected")

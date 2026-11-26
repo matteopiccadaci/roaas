@@ -8,7 +8,9 @@ An `auto` policy for real robots comes later (it needs the cell's interlocks and
 from __future__ import annotations
 
 import ipaddress
+import os
 import socket
+import sys
 from typing import Callable, Protocol
 
 
@@ -26,14 +28,35 @@ def is_local_host(host: str) -> bool:
         return False
 
 
+def flush_typeahead(stream=None) -> None:
+    """Throw away keys typed BEFORE the approval prompt appeared (as Crow's pilot bridge does), so that text typed
+    earlier, or left in the buffer, can never answer it. Windows console: msvcrt; elsewhere: termios. Does nothing
+    when the input is not a terminal (tests, pipes)."""
+    stream = sys.stdin if stream is None else stream
+    try:
+        if stream is None or not stream.isatty():
+            return
+        if os.name == "nt":
+            import msvcrt
+            while msvcrt.kbhit():
+                msvcrt.getwch()
+        else:
+            import termios
+            termios.tcflush(stream.fileno(), termios.TCIFLUSH)
+    except (OSError, ValueError, ImportError):
+        pass
+
+
 class OnSiteConsole:
     name = "on-site"
 
-    def __init__(self, ask: Callable[[str], str] = input, show: Callable[[str], None] = print):
-        self._ask, self._show = ask, show
+    def __init__(self, ask: Callable[[str], str] = input, show: Callable[[str], None] = print,
+                 flush: Callable[[], None] = flush_typeahead):
+        self._ask, self._show, self._flush = ask, show, flush
 
     def request(self, program_text: str, host: str) -> bool:
         self._show("\n  PROGRAM TO RUN ON THE ROBOT\n" + program_text)
+        self._flush()
         ans = self._ask("\n  Emergency stop within reach and work area clear? Type ENABLE to proceed: ")
         return ans.strip().upper() == "ENABLE"
 
@@ -44,13 +67,15 @@ class OnSiteJobConsole:
     DECLINE refuses the job for good; anything else leaves it waiting (`roaas ops retry` asks again)."""
     name = "on-site"
 
-    def __init__(self, job_id: str, header: str = "", ask: Callable[[str], str] = input, show: Callable[[str], None] = print):
+    def __init__(self, job_id: str, header: str = "", ask: Callable[[str], str] = input, show: Callable[[str], None] = print,
+                 flush: Callable[[], None] = flush_typeahead):
         self.code = job_id[-4:].upper()
-        self.header, self._ask, self._show = header, ask, show
+        self.header, self._ask, self._show, self._flush = header, ask, show, flush
 
     def request(self, program_text: str, host: str) -> bool:
         from .model import Declined
         self._show("\n  ======== JOB WAITING FOR APPROVAL ========\n" + self.header + "\n" + program_text)
+        self._flush()                               # nothing typed before this point can answer the prompt
         ans = " ".join(self._ask(f"\n  Emergency stop within reach and work area clear?\n"
                                  f"  Type  ENABLE {self.code}  to run,  DECLINE  to refuse it,  or Enter to leave it: ").split()).upper()
         if ans == "DECLINE":

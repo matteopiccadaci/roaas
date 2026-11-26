@@ -81,8 +81,8 @@ facts apply to it:
 ## Part 3: install the ROaaS lab agent and rehearse on the simulator
 
 1. **Get the repository into `C:\roaas`,** asking the person which way:
-   - `git clone https://github.com/matteopiccadaci/roaas C:\roaas`. It is a private repository, so Git needs
-     the person's GitHub login.
+   - `git clone https://github.com/matteopiccadaci/roaas C:\roaas`. The repository is public: no login
+     needed.
    - Or unzip the "Download ZIP" of that repository, which the person provides, into `C:\roaas`.
 
    Expect `C:\roaas\provider\pyproject.toml` and `C:\roaas\kits\dobot_kit\fake_dobot.py`.
@@ -126,20 +126,31 @@ which the person will provide after the Cloudflare deploy.
 
 ## Part 4: later, when the person provides the cloud URL and the lab token
 
-These commands contain `--live` and secrets, so **the person runs them, not you**. You may prepare the
-command line with the real `<KIT>` path and the URL, and check the output with them. They connect first
-**off duty**, so that no job can be accepted:
+These commands contain secrets, and the last one `--live`, so **the person runs them, not you**. You may prepare
+the command lines with the real `<KIT>` path and the URL, and check the output with them. The agent reads each
+deal's terms from Crow's operators: `Test-NetConnection api.crow.direct -Port 443` must succeed.
+
+**4a. First with the fake robot (rehearsal deals only).** Window A: `python C:\roaas\kits\dobot_kit\fake_dobot.py`.
+Window B:
 
 ```powershell
 Set-PSReadLineOption -HistorySaveStyle SaveNothing
 $env:ROAAS_LAB_TOKEN = "<the person types it>"
+roaas agent --cloud <URL> --robot-info C:\roaas\kits\dobot_kit\lab_limits_cr3a.json --keys-dir <KIT>\keys --out C:\roaas\rehearsal\episodes
+```
+
+- **Expect** `connected to wss://…`. In a third window, with the same `$env:ROAAS_LAB_TOKEN`, run
+  `roaas ops status --cloud <URL>`: agent online, robot ready.
+- Without `--live` the agent drives only `127.0.0.1` and declines any deal with production terms.
+
+**4b. Then the real robot, off duty** (Ctrl+C the rehearsal agent and the fake robot first):
+
+```powershell
 $env:DOBOT_SERIAL_SALT = "<the person types it>"
 roaas agent --cloud <URL> --robot-info <KIT>\robot_info_cr3a.json --host 192.168.5.1 --live --off-duty --keys-dir <KIT>\keys --out C:\roaas\episodes
 ```
 
-- **Expect** `connected to wss://…`.
-- **In a second window,** with the same `$env:ROAAS_LAB_TOKEN`, run `roaas ops status --cloud <URL>`. Expect
-  the agent online, the robot ready, and `on duty: False`.
+- **Expect** `connected to wss://…`, and in `roaas ops status`: agent online, robot ready, `on duty: False`.
 - **Hand both windows to the person.** From here the operator follows `C:\roaas\docs\OPERATOR.md`; only the
   person runs `roaas ops open` and types `ENABLE <code>`.
 - `--keys-dir <KIT>\keys` **reads** the lab key so that the fingerprint stays the same. The agent writes

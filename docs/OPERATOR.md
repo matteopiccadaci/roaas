@@ -46,7 +46,13 @@ You get an email (if configured) when a deal is funded. In window 1 the job appe
 | Enter, or anything else | Nothing moves; the job waits. `roaas ops retry <job>` asks again |
 
 `ENABLE` alone is not enough. The code makes sure that a prompt left on screen cannot approve a different job
-by mistake.
+by mistake. Anything typed **before** the prompt appears is thrown away: type only once you have read the
+program.
+
+Before asking you, the agent has already checked the deal's terms with Crow. A job whose terms do not name the
+order, or that does not suit the robot (rehearsal terms need the simulator, real deals the real robot), is
+declined without asking. After your `ENABLE` the deadline is checked again: if too little time is left, nothing
+starts.
 
 ## Commands (window 2)
 
@@ -67,6 +73,10 @@ Run `roaas ops close`, then Ctrl+C in window 1. With the agent stopped, Crow quo
 
 - **The run aborts or fails verification.** The job becomes `failed` with the reason. Fix the cause, then run
   `roaas ops retry <job>`. Nothing was delivered, so a new run is fine.
+- **"The deal's checks would refuse this delivery".** The agent ran the deal's own checks on the delivery and at
+  least one failed, so it kept the delivery in the lab. The reason names the check. Fix the cause and retry.
+- **"Interrupted: the lab agent stopped during the run".** The agent crashed or was closed during a run. The
+  job is never run again by itself: check the robot, then `roaas ops retry <job>` if there is time left.
 - **The robot needs maintenance.** Run `roaas ops pause`. For jobs already funded, use `roaas ops decline` or
   let them wait if you will be back before their deadline.
 - **A delivery deadline passes without a delivery.** Crow refunds the buyer the price and the fee

@@ -24,6 +24,7 @@ import json
 import sys
 from pathlib import Path
 
+from . import USER_AGENT
 from .core import approval as approvals
 from .core.model import Cancelled, Deal, NotReady
 from .core.packaging import build_delivery
@@ -75,6 +76,8 @@ def cmd_run(a):
     local = approvals.is_local_host(a.host)
     if not local and not a.live:
         sys.exit("Non-local host: add --live to move a real robot (and stay next to the emergency stop).")
+    if local and a.live:
+        sys.exit("--live is for the real robot; the simulator on this machine runs without it.")
     policy = approvals.OnSiteConsole() if a.live else approvals.SimulatorOnly()
     signer = signers.make_signer(a.signer, a.keys_dir)
     try:
@@ -162,18 +165,23 @@ def cmd_terms(a):
 
 def cmd_agent(a):
     import os
-    from .agent.agent import LabAgent
+    from .agent.agent import LabAgent, crow_terms_fetcher
     from .robots.dobot_cr3a.kit import signers
 
     token = os.environ.get(a.token_env, "")
     if not token:
         sys.exit(f"[agent] set {a.token_env} to the lab token (never put it in a file you share)")
-    if not approvals.is_local_host(a.host) and not a.live:
+    local = approvals.is_local_host(a.host)
+    if not local and not a.live:
         sys.exit("[agent] a robot that is not on this machine needs --live (the operator types ENABLE for each job)")
+    if local and a.live:
+        sys.exit("[agent] --live is for the real robot; the simulator on this machine runs without it "
+                 "(and takes only rehearsal deals)")
     agent = LabAgent(cloud=a.cloud, token=token, robot_info=json.loads(Path(a.robot_info).read_text(encoding="utf-8")),
                      host=a.host, approval="on-site-job" if a.live else approvals.SimulatorOnly(),
                      signer=signers.make_signer(a.signer, a.keys_dir), out_dir=Path(a.out),
-                     dashboard_port=a.dashboard_port, feedback_port=a.feedback_port, on_duty=not a.off_duty)
+                     dashboard_port=a.dashboard_port, feedback_port=a.feedback_port, on_duty=not a.off_duty,
+                     fetch_terms=crow_terms_fetcher(a.crow_operators))
     try:
         agent.run()
     except KeyboardInterrupt:
@@ -193,7 +201,8 @@ def cmd_ops(a):
 
     def call(method, path, body=None):
         req = urllib.request.Request(base + path, method=method, data=json.dumps(body or {}).encode() if method == "POST" else None,
-                                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+                                     headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json",
+                                              "User-Agent": USER_AGENT})
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
                 return json.loads(r.read() or b"null")
@@ -285,6 +294,8 @@ def main(argv=None):
     p.add_argument("--feedback-port", type=int, default=30004)
     p.add_argument("--token-env", default="ROAAS_LAB_TOKEN")
     p.add_argument("--off-duty", action="store_true", help="connect, but accept no quotes")
+    p.add_argument("--crow-operators", default="https://api.crow.direct,https://api2.crow.direct",
+                   help="Crow operators the agent reads each deal's terms from (comma-separated)")
     p.set_defaults(func=cmd_agent)
     p = sub.add_parser("ops")
     p.add_argument("action", choices=["status", "queue", "open", "close", "pause", "resume", "retry", "decline"])

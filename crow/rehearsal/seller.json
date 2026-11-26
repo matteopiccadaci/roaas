@@ -19,14 +19,14 @@
     }
   },
   "sellerApi": {
-    "baseUrl": "https://PLACEHOLDER.vercel.app/",
+    "baseUrl": "https://roaas.roaas-cloud.workers.dev/",
     "auth": {
       "env": "ROAAS_JOB_API_KEY",
       "header": "X-ROaaS-Key"
     },
-    "quote": "https://PLACEHOLDER.vercel.app/api/crow/quote",
-    "start": "https://PLACEHOLDER.vercel.app/api/crow/jobs",
-    "result": "https://PLACEHOLDER.vercel.app/api/crow/jobs/{jobId}/result"
+    "quote": "https://roaas.roaas-cloud.workers.dev/api/crow/quote",
+    "start": "https://roaas.roaas-cloud.workers.dev/api/crow/jobs",
+    "result": "https://roaas.roaas-cloud.workers.dev/api/crow/jobs/{jobId}/result"
   },
   "quoteRateLimit": {
     "overall": {

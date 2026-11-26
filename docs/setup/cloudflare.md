@@ -8,6 +8,14 @@ What runs where:
 
 Nothing here costs money: Workers Free, no R2, test tokens only.
 
+**Deployed on 2026-11-26 at `https://roaas.roaas-cloud.workers.dev`.** The two secrets were generated on the Mac
+into `secrets/cloudflare.json` (git-ignored, readable only by the user) and uploaded with
+`npx wrangler deploy --secrets-file ../secrets/cloudflare.json`. Move them to a password manager.
+
+**Every HTTP client must send its own User-Agent.** Cloudflare answers 403 "error code: 1010" to Python's default
+one (`Python-urllib/3.x`), on our Worker and on Crow's API alike. The `roaas` package sends
+`roaas/<version>`; WebSocket clients are not affected.
+
 ## 1. Deploy the Worker (Mac, once)
 
 ```bash
@@ -63,6 +71,8 @@ roaas agent --cloud https://roaas.<your-subdomain>.workers.dev --robot-info C:\d
     --host 192.168.5.1 --live --keys-dir C:\dobot_kit\keys --out C:\roaas\episodes
 ```
 
+- **Crow:** the agent reads each deal's terms from Crow's operators (`api.crow.direct`, `api2.crow.direct`,
+  option `--crow-operators`), so the mini PC must reach them over the Wi-Fi.
 - **Ready:** the agent prints `connected to wss://…/api/lab/ws`. `/api/status` then shows `"accepting": true`
   when the robot is disabled (mode 4), in TCP mode, without alarms, and DobotStudio Pro is closed.
 - **Each funded job prints its program and asks for `ENABLE`.** Type it only with the emergency stop within
@@ -76,4 +86,6 @@ roaas agent --cloud https://roaas.<your-subdomain>.workers.dev --robot-info C:\d
   `"kind":"released"`.
 - **On testnet with the fake robot,** Rafa deploys `crow/rehearsal/seller.json` and `template.json`
   (simulator-only terms), and the agent runs against `fake_dobot.py` on the mini PC (`--host 127.0.0.1`,
-  without `--live`). Production terms refuse a simulator run, by design.
+  without `--live`, and `--keys-dir C:\dobot_kit\keys` so the fingerprint matches the rehearsal terms). The
+  agent declines production terms on the simulator before asking anyone, and Crow's checks would refuse such a
+  run anyway.

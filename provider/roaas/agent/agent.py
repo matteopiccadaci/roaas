@@ -6,13 +6,19 @@ It opens ONE outbound WebSocket to the job API's Durable Object and keeps it ope
   lab -> cloud  {"type": "hello" | "status", "status": {...}} robot status (probe) every STATUS_EVERY_S
                 {"type": "validate_result", "id", "ok", "errors", "warnings", "estimate"}
                 {"type": "job_event", "job_id", "state", "detail"}
-Results go up over HTTPS (PUT telemetry to R2, then the delivery document). Nothing in a job is executed: it is an
-order, parsed and validated again against the LOCAL limits before the operator is asked.
+Results go up over HTTPS (PUT the encrypted telemetry, then the delivery document). Nothing in a job is executed: it
+is an order, parsed and validated again against the LOCAL limits before the operator is asked.
+
+The agent does not trust the cloud with the deal: it reads the deal's terms from Crow's operators itself, refuses a
+deal whose terms do not name this order or do not match the robot it drives (rehearsal terms need the simulator,
+production terms the real robot), and runs the deal's own checks on the delivery before uploading it.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import queue
+import re
 import threading
 import time
 import urllib.error
@@ -20,19 +26,27 @@ import urllib.request
 from pathlib import Path
 from typing import Callable, Optional
 
-from .. import __version__
-from ..core.approval import OnSiteJobConsole
+from .. import USER_AGENT, __version__
+from ..core.approval import OnSiteJobConsole, is_local_host
 from ..core.model import Cancelled, Deal, Declined, NotReady
 from ..core.packaging import build_delivery
 from ..core.tasks import TaskError, parse_task
 from ..robots import get_adapter
+from ..settlement import crow_checks
 
 STATUS_EVERY_S = 10
 DEADLINE_MARGIN_S = 600          # never start a run this close to the delivery deadline (as Crow's pilot bridge)
+CROW_OPERATORS = "https://api.crow.direct,https://api2.crow.direct"
+COMMITMENT_ID = re.compile(r"^0x[0-9a-f]{64}$")
+
+
+class TooLate(RuntimeError):
+    """The operator approved, but the delivery deadline is now too close: nothing was started."""
 
 
 class ApprovalWithHook:
-    """Wraps an approval policy: tells the cloud the job is running as soon as the operator approves."""
+    """Wraps an approval policy. Once the operator approves, `on_approved` runs BEFORE the recorder or any motion
+    starts: it may raise (TooLate) to stop the job there, or tell the cloud that the job is running."""
 
     def __init__(self, policy, on_approved: Callable[[], None]):
         self.policy, self.on_approved, self.name = policy, on_approved, policy.name
@@ -44,10 +58,37 @@ class ApprovalWithHook:
         return ok
 
 
+def crow_terms_fetcher(operators: str = CROW_OPERATORS, timeout_s: float = 20) -> Callable[[dict], dict]:
+    """Reads a job's terms from Crow's operators (GET /v1/commitments/{id}/terms). Every operator that answers must
+    serve the same checks; at least one must answer."""
+    ops = [o.strip().rstrip("/") for o in operators.split(",") if o.strip()]
+
+    def fetch(job: dict) -> dict:
+        cid = str(job.get("commitment_id", ""))
+        if not COMMITMENT_ID.match(cid):
+            raise ValueError("not a commitment id")
+        got, errors = [], []
+        for op in ops:
+            try:
+                req = urllib.request.Request(f"{op}/v1/commitments/{cid}/terms",
+                                             headers={"Accept": "application/json", "User-Agent": USER_AGENT})
+                with urllib.request.urlopen(req, timeout=timeout_s) as r:
+                    got.append(json.loads(r.read()))
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{op}: {e}")
+        if not got:
+            raise RuntimeError("no Crow operator served the terms (" + "; ".join(errors) + ")")
+        if any(crow_checks.deal_checks(t) != crow_checks.deal_checks(got[0]) for t in got[1:]):
+            raise RuntimeError("Crow's operators serve different checks for this deal")
+        return got[0]
+    return fetch
+
+
 class LabAgent:
     def __init__(self, *, cloud: str, token: str, robot_info: dict, host: str, approval, signer, out_dir: Path,
                  robot_id: str = "dobot_cr3a", dashboard_port: int = 29999, feedback_port: int = 30004,
-                 on_duty: bool = True, log: Callable[[str], None] = print):
+                 on_duty: bool = True, log: Callable[[str], None] = print,
+                 fetch_terms: Optional[Callable[[dict], dict]] = None):
         self.cloud = cloud.rstrip("/")
         self.ws_url = self.cloud.replace("https://", "wss://", 1).replace("http://", "ws://", 1) + "/api/lab/ws"
         self.token, self.robot_info, self.host = token, robot_info, host
@@ -58,6 +99,8 @@ class LabAgent:
         self.jobs: "queue.Queue[dict]" = queue.Queue()
         self.seen: set = set()
         self.busy = False
+        self.current: Optional[str] = None      # the job being handled; the cloud fails a 'running' job that is not this
+        self.fetch_terms = fetch_terms or crow_terms_fetcher()
         self.robot_lock = threading.Lock()      # one dashboard user at a time: probe or job
         self.stop = threading.Event()
         self._ws = None
@@ -80,7 +123,7 @@ class LabAgent:
 
     def status(self) -> dict:
         st = {"robot": self.adapter.robot_id, "agent_version": __version__, "on_duty": self.on_duty, "busy": self.busy,
-              "paused": False}
+              "paused": False, "job_id": self.current}
         if self.busy or not self.robot_lock.acquire(blocking=False):
             return dict(st, busy=True, ready=False, reason="running a job")
         try:
@@ -108,7 +151,8 @@ class LabAgent:
     # ------------------------------------------------------------------ HTTPS uploads
     def put(self, path: str, data: bytes, content_type: str) -> dict:
         req = urllib.request.Request(self.cloud + path, data=data, method="PUT",
-                                     headers={"Authorization": f"Bearer {self.token}", "Content-Type": content_type})
+                                     headers={"Authorization": f"Bearer {self.token}", "Content-Type": content_type,
+                                              "User-Agent": USER_AGENT})
         try:
             with urllib.request.urlopen(req, timeout=120) as r:
                 return json.loads(r.read() or b"{}")
@@ -117,6 +161,13 @@ class LabAgent:
 
     # ------------------------------------------------------------------ one job
     def run_job(self, job: dict) -> None:
+        self.current = job["id"]
+        try:
+            self._run_job(job)
+        finally:
+            self.current = None
+
+    def _run_job(self, job: dict) -> None:
         jid = job["id"]
         self.event(jid, "claimed")
         raw = job["scope"]["orderText"].encode("utf-8")
@@ -127,8 +178,27 @@ class LabAgent:
         v = self.validate(job["scope"]["orderText"])
         if not v["ok"]:
             return self.event(jid, "declined", "rejected by the lab's limits: " + "; ".join(v["errors"]))
+
+        # The deal's terms, read from Crow (not from the cloud): they must name this order and suit this robot.
+        try:
+            terms = self.fetch_terms(job)
+            checks = crow_checks.deal_checks(terms)
+        except Exception as e:  # noqa: BLE001
+            return self.event(jid, "failed", f"could not read the deal's terms from Crow: {e}")
+        t = terms.get("terms", terms)
+        if hashlib.sha256(raw).hexdigest() not in str((t.get("deliverable") or {}).get("description", "")):
+            return self.event(jid, "declined", "the deal's terms do not name this order (orderSha256)")
+        simulator = is_local_host(self.host)
+        wants = crow_checks.accepts_simulator(checks)
+        if wants is None:
+            return self.event(jid, "declined", "the deal's terms do not say whether a simulator run is accepted")
+        if wants != simulator:
+            return self.event(jid, "declined", "rehearsal terms (simulator only) but this agent drives the real robot"
+                              if wants else "production terms (real robot only) but this agent drives the simulator")
+
+        upper_s = v["estimate"]["recording_upper_s"]
         left_s = job["deliver_by_ms"] / 1000 - time.time()
-        if left_s < v["estimate"]["recording_upper_s"] + DEADLINE_MARGIN_S:
+        if left_s < upper_s + DEADLINE_MARGIN_S:
             return self.event(jid, "failed", f"too close to the delivery deadline ({left_s:.0f} s left)")
         self.event(jid, "awaiting_approval")
         policy = self.approval
@@ -136,7 +206,15 @@ class LabAgent:
             header = (f"  job {jid}   commitment {job['commitment_id'][:18]}…   buyer {job.get('buyer') or '?'}\n"
                       f"  deliver before {time.strftime('%Y-%m-%d %H:%M', time.localtime(job['deliver_by_ms'] / 1000))}")
             policy = OnSiteJobConsole(jid, header)
-        approval = ApprovalWithHook(policy, lambda: self.event(jid, "running"))
+
+        def approved() -> None:
+            # Checked again once the operator answers, who may do so hours later. Nothing has started yet.
+            left = job["deliver_by_ms"] / 1000 - time.time()
+            if left < upper_s + DEADLINE_MARGIN_S:
+                raise TooLate(f"approved with {left:.0f} s left before the delivery deadline: too late to run")
+            self.event(jid, "running")
+
+        approval = ApprovalWithHook(policy, approved)
         deal = Deal(settlement="crow", commitment_id=job["commitment_id"], buyer=job.get("buyer"), job_id=jid)
         self.robot_lock.acquire()
         self.busy = True
@@ -145,6 +223,8 @@ class LabAgent:
                                       signer=self.signer, out_dir=self.out_dir, deal=deal, **self.ports)
         except NotReady as e:
             return self.event(jid, "failed", f"robot not ready: {e}")
+        except TooLate as e:
+            return self.event(jid, "failed", f"{e}; nothing moved")
         except Declined as e:
             return self.event(jid, "declined", str(e))
         except Cancelled:
@@ -162,6 +242,17 @@ class LabAgent:
             return self.event(jid, "failed", "episode not valid: " + "; ".join(bad[:5]))
         try:
             doc, ciphertext = build_delivery(ep.path, telemetry_url=job["telemetry_url"])
+        except Exception as e:  # noqa: BLE001
+            return self.event(jid, "failed", f"packaging failed: {e}")
+        # The deal's own checks, here, before anything is uploaded: a delivery Crow would refuse stays in the lab.
+        verdict = crow_checks.evaluate(checks, doc)
+        for r in verdict:
+            self.log("[agent]" + r.line())
+        refused = crow_checks.blocking(checks, verdict)
+        if refused:
+            return self.event(jid, "failed", "the deal's checks would refuse this delivery, so it was not uploaded: "
+                              + "; ".join(r.line().strip() for r in refused[:5]))
+        try:
             self.put(f"/api/lab/jobs/{jid}/telemetry", ciphertext, "application/octet-stream")
             self.put(f"/api/lab/jobs/{jid}/episode", doc, "application/json")
         except Exception as e:  # noqa: BLE001
@@ -178,6 +269,7 @@ class LabAgent:
                 self.run_job(job)
             except Exception as e:  # noqa: BLE001
                 self.log(f"[agent] job {job.get('id')} crashed: {e}")
+                self.event(str(job.get("id")), "failed", f"lab agent error: {e}")
             self.send({"type": "status", "status": self.status()})
 
     def _status_loop(self) -> None:

@@ -7,6 +7,10 @@ import { checkScope, priceFor, sha256Hex, type Pricing } from './order';
 import pricingFile from '../../crow/pricing.json';
 
 const ACTIVE = ['started', 'claimed', 'awaiting_approval', 'running', 'failed'];
+// Sent again to an agent that (re)connects: only jobs that never reached the robot. A 'running' job the agent is not
+// handling any more was cut by a crash or restart: it becomes 'failed' and runs again only on `roaas ops retry`.
+const RESEND = ['started', 'claimed', 'awaiting_approval'];
+const INTERRUPTED = 'interrupted: the lab agent stopped during the run. Nothing is re-run by itself; `roaas ops retry` asks the operator again';
 const LAB_STATES = new Set(['claimed', 'awaiting_approval', 'running', 'failed', 'declined']);
 const STATUS_MAX_AGE_MS = 30_000;
 const VALIDATE_TIMEOUT_MS = 8_000;
@@ -154,8 +158,8 @@ export class Lab extends DurableObject<Env> {
   private pushPending(origin: string) {
     const ws = this.agent();
     if (!ws) return;
-    const rows = this.sql.exec(`SELECT * FROM jobs WHERE state IN (${ACTIVE.map(() => '?').join(',')}) AND deliver_by_ms > ?
-      ORDER BY created_ms`, ...ACTIVE, Date.now()).toArray();
+    const rows = this.sql.exec(`SELECT * FROM jobs WHERE state IN (${RESEND.map(() => '?').join(',')}) AND deliver_by_ms > ?
+      ORDER BY created_ms`, ...RESEND, Date.now()).toArray();
     for (const j of rows) ws.send(JSON.stringify(this.jobMessage(j as Json, origin)));
   }
 
@@ -348,6 +352,12 @@ export class Lab extends DurableObject<Env> {
       this.kvSet('status_ms', String(Date.now()));
       if (m.type === 'hello') {
         this.kvSet('on_duty', m.status?.on_duty === false ? '0' : '1');
+        const current = typeof m.status?.job_id === 'string' ? m.status.job_id : null;
+        for (const r of this.sql.exec(`SELECT id FROM jobs WHERE state = 'running'`).toArray()) {
+          if (r.id === current) continue;                // the same agent, reconnected mid-run: the job goes on
+          this.setState(r.id as string, 'failed', INTERRUPTED);
+          this.notify(`job ${r.id} interrupted`, INTERRUPTED);
+        }
         this.pushPending(this.kvGet('origin') ?? '');
       }
     } else if (m.type === 'validate_result' && typeof m.id === 'string') {

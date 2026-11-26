@@ -152,7 +152,7 @@
       },
       "checks": "deterministic only: see the deal template (template.json)",
       "price": {
-        "token": "PLACEHOLDER: Crow Test USDC token address on Sepolia",
+        "token": "0xf1a4b68b201e9eddef8a054fb6a931b849d18504",
         "formula": "base + per_waypoint x waypoints",
         "amounts_base_units": {
           "base": "PLACEHOLDER",
@@ -167,7 +167,7 @@
           "nonce": "<the order's nonce>",
           "orderSha256": "<sha256 of orderText>"
         },
-        "validate_first": "https://PLACEHOLDER.vercel.app/api/validate",
+        "validate_first": "https://roaas.roaas-cloud.workers.dev/api/validate",
         "fingerprint": "sent by the lab out of band; it is pinned in every deal's signature check"
       }
     },
@@ -320,7 +320,7 @@
       },
       "checks": "deterministic only: see the deal template (template.json)",
       "price": {
-        "token": "PLACEHOLDER: Crow Test USDC token address on Sepolia",
+        "token": "0xf1a4b68b201e9eddef8a054fb6a931b849d18504",
         "formula": "base + per_waypoint x waypoints x repetitions",
         "amounts_base_units": {
           "base": "PLACEHOLDER",
@@ -335,7 +335,7 @@
           "nonce": "<the order's nonce>",
           "orderSha256": "<sha256 of orderText>"
         },
-        "validate_first": "https://PLACEHOLDER.vercel.app/api/validate",
+        "validate_first": "https://roaas.roaas-cloud.workers.dev/api/validate",
         "fingerprint": "sent by the lab out of band; it is pinned in every deal's signature check"
       }
     }

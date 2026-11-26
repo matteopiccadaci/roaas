@@ -1,5 +1,5 @@
 {
-  "token": "PLACEHOLDER: Crow Test USDC token address on Sepolia",
+  "token": "0xf1a4b68b201e9eddef8a054fb6a931b849d18504",
   "deliver_within_sec": 259200,
   "joint_waypoints": {
     "formula": "base + per_waypoint x waypoints",
